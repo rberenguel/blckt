@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Blockout</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #111; }
+        body { margin: 0; overflow: hidden; background-color: #002b36; } /* Solarized Base03 */
         canvas { display: block; }
         #info {
             position: absolute;
             top: 10px;
             width: 100%;
             text-align: center;
-            color: white;
+            color: #93a1a1; /* Solarized Base1 */
             font-family: monospace;
             font-size: 24px;
-            text-shadow: 2px 2px 4px #000;
+            text-shadow: 1px 1px 2px #000;
             z-index: 100;
         }
     </style>
@@ -23,7 +23,7 @@
 <body>
     <div id="info">
         <div>Score: <span id="score">0</span></div>
-        <div id="game-over" style="display:none; color: #ff3333;">GAME OVER</div>
+        <div id="game-over" style="display:none; color: #dc322f;">GAME OVER</div>
     </div>
     <canvas id="bg"></canvas>
     <script type="module">
@@ -38,24 +38,25 @@
         let scene, camera, renderer, clock, dirLight;
         let activePiece = null, ghostPiece = null;
         let grid = [], staticMeshes = new THREE.Group();
+        let wallCanvases = {}, wallContexts = {}, wallTextures = {};
         let score = 0, lastTick = 0, lockDelayTimer = 0;
         let isTouchingFloor = false, gameOver = false;
 
-        // --- Piece Definitions & Materials ---
+        // --- Piece Definitions (Solarized Colors) ---
         const PIECES = [
-            { color: 0x00ffff, shape: [[-1,0,0], [0,0,0], [1,0,0], [2,0,0]] },
-            { color: 0xffff00, shape: [[0,0,0], [1,0,0], [0,1,0], [1,1,0]] },
-            { color: 0x0000ff, shape: [[-1,0,0], [0,0,0], [1,0,0], [0,1,0]] },
-            { color: 0xffa500, shape: [[-1,1,0], [0,1,0], [0,0,0], [1,0,0]] },
-            { color: 0x00ff00, shape: [[-1,0,0], [0,0,0], [0,1,0], [1,1,0]] },
-            { color: 0x800080, shape: [[-1,0,0], [0,0,0], [1,0,0], [1,1,0]] },
-            { color: 0xff0000, shape: [[0,0,0], [0,1,0], [0,0,1]] },
-            { color: 0xffc0cb, shape: [[0,0,0], [1,0,0], [0,1,0], [0,0,1]] },
-            { color: 0xeeeeee, shape: [[0,0,0], [-1,0,0], [0,1,0], [0,0,1]] }
+            { color: 0x2aa198, shape: [[-1,0,0], [0,0,0], [1,0,0], [2,0,0]] }, // Cyan
+            { color: 0xb58900, shape: [[0,0,0], [1,0,0], [0,1,0], [1,1,0]] }, // Yellow
+            { color: 0x6c71c4, shape: [[-1,0,0], [0,0,0], [1,0,0], [0,1,0]] }, // Violet
+            { color: 0xcb4b16, shape: [[-1,1,0], [0,1,0], [0,0,0], [1,0,0]] }, // Orange
+            { color: 0x859900, shape: [[-1,0,0], [0,0,0], [0,1,0], [1,1,0]] }, // Green
+            { color: 0x268bd2, shape: [[-1,0,0], [0,0,0], [1,0,0], [1,1,0]] }, // Blue
+            { color: 0xdc322f, shape: [[0,0,0], [0,1,0], [0,0,1]] },             // Red
+            { color: 0xd33682, shape: [[0,0,0], [1,0,0], [0,1,0], [0,0,1]] }, // Magenta
+            { color: 0x839496, shape: [[0,0,0], [-1,0,0], [0,1,0], [0,0,1]] }  // Base0
         ];
         const pieceMaterials = PIECES.map(p => new THREE.MeshStandardMaterial({ color: p.color }));
         const baseBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
-        const ghostWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xffff00 });
+        const ghostWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xb58900 }); // Solarized Yellow
 
         function init() {
             scene = new THREE.Scene();
@@ -71,9 +72,10 @@
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.setClearColor(0x002b36);
 
-            scene.add(new THREE.AmbientLight(0x606060));
-            dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            scene.add(new THREE.AmbientLight(0x586e75)); // Solarized Base01
+            dirLight = new THREE.DirectionalLight(0xfdf6e3, 1.0); // Solarized Base3
             dirLight.position.set(WELL_DIMS.width, WELL_DIMS.height, WELL_DIMS.depth / 2);
             dirLight.castShadow = true;
             dirLight.shadow.camera.top = WELL_DIMS.height;
@@ -82,11 +84,9 @@
             dirLight.shadow.camera.right = 15;
             dirLight.shadow.bias = -0.001;
             scene.add(dirLight);
-
-            const floorGrid = new THREE.GridHelper(WELL_DIMS.width, WELL_DIMS.width, 0x888888, 0x444444);
-            floorGrid.position.set(0, -0.5, 0);
-            scene.add(floorGrid);
-
+            
+            createDynamicWalls();
+            
             grid = Array.from({ length: WELL_DIMS.width }, () =>
                 Array.from({ length: WELL_DIMS.height }, () =>
                     Array(WELL_DIMS.depth).fill(null)
@@ -100,6 +100,89 @@
             animate();
         }
 
+        function createDynamicWalls() {
+            const walls = {
+                back:   { size: [WELL_DIMS.width, WELL_DIMS.height], pos: [0, WELL_DIMS.height/2-0.5, -WELL_DIMS.depth/2], rot: [0,0,0] },
+                left:   { size: [WELL_DIMS.depth, WELL_DIMS.height], pos: [-WELL_DIMS.width/2, WELL_DIMS.height/2-0.5, 0], rot: [0, Math.PI/2, 0] },
+                right:  { size: [WELL_DIMS.depth, WELL_DIMS.height], pos: [WELL_DIMS.width/2, WELL_DIMS.height/2-0.5, 0], rot: [0, -Math.PI/2, 0] },
+                floor:  { size: [WELL_DIMS.width, WELL_DIMS.depth], pos: [0, -0.5, 0], rot: [-Math.PI/2, 0, 0] },
+            };
+            for (const [name, w] of Object.entries(walls)) {
+                const canvas = document.createElement('canvas');
+                canvas.width = w.size[0];
+                canvas.height = w.size[1];
+                wallCanvases[name] = canvas;
+                wallContexts[name] = canvas.getContext('2d');
+                wallTextures[name] = new THREE.CanvasTexture(canvas);
+
+                const material = new THREE.MeshBasicMaterial({ map: wallTextures[name], transparent: true });
+                const plane = new THREE.Mesh(new THREE.PlaneGeometry(...w.size), material);
+                plane.position.set(...w.pos);
+                plane.rotation.set(...w.rot);
+                scene.add(plane);
+            }
+        }
+
+        function updateWallTextures() {
+            const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
+            const wallMapping = {
+                back:  (x,y,z) => grid[x][y][0],
+                left:  (x,y,z) => grid[0][y][z],
+                right: (x,y,z) => grid[w-1][y][z],
+                floor: (x,y,z) => grid[x][0][z],
+            };
+            const ctxs = {
+                back:  wallContexts.back,
+                left:  wallContexts.left,
+                right: wallContexts.right,
+                floor: wallContexts.floor,
+            };
+
+            for(const ctx of Object.values(ctxs)) {
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.fillStyle = 'rgba(10, 30, 35, 0.5)'; // Darker solarized tone
+                ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.strokeStyle = '#073642'; // Solarized Base02
+                for (let i = 0; i < ctx.canvas.width; i++) { ctx.beginPath(); ctx.moveTo(i + 0.5, 0); ctx.lineTo(i + 0.5, ctx.canvas.height); ctx.stroke(); }
+                for (let i = 0; i < ctx.canvas.height; i++) { ctx.beginPath(); ctx.moveTo(0, i + 0.5); ctx.lineTo(ctx.canvas.width, i + 0.5); ctx.stroke(); }
+            }
+
+            for (let y = 0; y < h; y++) {
+                for (let z = 0; z < d; z++) {
+                    for (let x = 0; x < w; x++) {
+                        if (grid[x][y][z]) {
+                            const color = '#' + grid[x][y][z].material.color.getHexString();
+                            ctxs.left.fillStyle = color;
+                            ctxs.left.globalAlpha = 0.3;
+                            ctxs.left.fillRect(z, h - 1 - y, 1, 1);
+                            break; // Closest found for this row
+                        }
+                    }
+                    for (let x = w - 1; x >= 0; x--) {
+                        if (grid[x][y][z]) {
+                            const color = '#' + grid[x][y][z].material.color.getHexString();
+                            ctxs.right.fillStyle = color;
+                            ctxs.right.globalAlpha = 0.3;
+                            ctxs.right.fillRect(z, h - 1 - y, 1, 1);
+                            break;
+                        }
+                    }
+                }
+                for (let x = 0; x < w; x++) {
+                    for (let z = 0; z < d; z++) {
+                        if (grid[x][y][z]) {
+                            const color = '#' + grid[x][y][z].material.color.getHexString();
+                            ctxs.back.fillStyle = color;
+                            ctxs.back.globalAlpha = 0.3;
+                            ctxs.back.fillRect(x, h - 1 - y, 1, 1);
+                            break;
+                        }
+                    }
+                }
+            }
+             for(const tex of Object.values(wallTextures)) tex.needsUpdate = true;
+        }
+
         function spawnPiece() {
             if (gameOver) return;
             const pieceIndex = Math.floor(Math.random() * PIECES.length);
@@ -110,13 +193,13 @@
             
             for (const pos of pieceData.shape) {
                 const solidCube = new THREE.Mesh(baseBoxGeometry, pieceMaterials[pieceIndex]);
-                solidCube.position.set(pos[0], pos[1], pos[2]);
+                solidCube.position.set(...pos);
                 solidCube.castShadow = true;
                 activePiece.add(solidCube);
 
-                const wireframeGeom = new THREE.WireframeGeometry(baseBoxGeometry);
+                const wireframeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
                 const wireframeCube = new THREE.LineSegments(wireframeGeom, ghostWireframeMaterial);
-                wireframeCube.position.set(pos[0], pos[1], pos[2]);
+                wireframeCube.position.set(...pos);
                 ghostPiece.add(wireframeCube);
             }
 
@@ -130,27 +213,6 @@
             } else {
                 updateGhostPiece();
             }
-        }
-
-        function checkCollision(piece) {
-            const tempVec = new THREE.Vector3();
-            for (const cube of piece.children) {
-                cube.getWorldPosition(tempVec);
-                const [gx, gy, gz] = worldToGrid(tempVec);
-                if (gy < 0 || gy >= WELL_DIMS.height || gx < 0 || gx >= WELL_DIMS.width || gz < 0 || gz >= WELL_DIMS.depth) return true;
-                if (grid[gx]?.[gy]?.[gz]) return true;
-            }
-            return false;
-        }
-
-        function updateGhostPiece() {
-            if (!activePiece) return;
-            ghostPiece.position.copy(activePiece.position);
-            ghostPiece.quaternion.copy(activePiece.quaternion);
-            while (!checkCollision(ghostPiece)) {
-                ghostPiece.position.y--;
-            }
-            ghostPiece.position.y++;
         }
 
         function lockPiece() {
@@ -169,6 +231,7 @@
             scene.remove(activePiece, ghostPiece);
             activePiece = ghostPiece = null;
             checkAndClearLayers();
+            updateWallTextures();
             spawnPiece();
             isTouchingFloor = false;
             lockDelayTimer = 0;
@@ -184,10 +247,8 @@
                     y--;
                 }
             }
-            if (layersCleared > 0) {
-                score += (100 * layersCleared) * layersCleared;
-                document.getElementById('score').innerText = score;
-            }
+            if (layersCleared > 0) score += (100 * layersCleared) * layersCleared;
+            document.getElementById('score').innerText = score;
         }
 
         function isLayerFull(y) {
@@ -263,10 +324,30 @@
         }
 
         function worldToGrid(worldPos) {
-            const gx = Math.round(worldPos.x + (WELL_DIMS.width / 2 - 0.5));
-            const gy = Math.round(worldPos.y - 0.5);
-            const gz = Math.round(worldPos.z + (WELL_DIMS.depth / 2 - 0.5));
-            return [gx, gy, gz];
+            return [
+                Math.round(worldPos.x + (WELL_DIMS.width / 2 - 0.5)),
+                Math.round(worldPos.y - 0.5),
+                Math.round(worldPos.z + (WELL_DIMS.depth / 2 - 0.5))
+            ];
+        }
+
+        function updateGhostPiece() {
+            if (!activePiece) return;
+            ghostPiece.position.copy(activePiece.position);
+            ghostPiece.quaternion.copy(activePiece.quaternion);
+            while (!checkCollision(ghostPiece)) ghostPiece.position.y--;
+            ghostPiece.position.y++;
+        }
+
+        function checkCollision(piece) {
+            const tempVec = new THREE.Vector3();
+            for (const cube of piece.children) {
+                cube.getWorldPosition(tempVec);
+                const [gx, gy, gz] = worldToGrid(tempVec);
+                if (gy < 0 || gy >= WELL_DIMS.height || gx < 0 || gx >= WELL_DIMS.width || gz < 0 || gz >= WELL_DIMS.depth) return true;
+                if (grid[gx]?.[gy]?.[gz]) return true;
+            }
+            return false;
         }
 
         function animate() {
