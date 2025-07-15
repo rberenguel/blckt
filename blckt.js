@@ -1,12 +1,12 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js";
 
 // --- Configuration ---
-const WELL_DIMS = { width: 6, height: 12, depth: 5 };
-const TICK_RATE_MS = 800;
+const WELL_DIMS = { width: 5, depth: 5, height: 12 };
+const TICK_RATE_MS = 1000;
 const LOCK_DELAY_MS = 500;
 const CAMERA_CONFIG = {
-  pos: new THREE.Vector3(0, WELL_DIMS.height * 1.8, 0),
-  lookAt: new THREE.Vector3(0, WELL_DIMS.height * 0.35, 0),
+  pos: new THREE.Vector3(0, WELL_DIMS.height * 1.4, 0),
+  lookAt: new THREE.Vector3(0, -WELL_DIMS.height * 0.05, 0),
 };
 
 // --- Core Components ---
@@ -21,7 +21,7 @@ let score = 0,
   lockDelayTimer = 0;
 let isTouchingFloor = false,
   gameOver = false;
-  let isAnimating = false;
+let isAnimating = false;
 
 // --- Piece Definitions & Materials ---
 const PIECES = [
@@ -114,7 +114,9 @@ const LAYER_COLORS = PIECES.map((p) => p.color);
 const activeWireframeMaterial = new THREE.LineBasicMaterial({
   color: 0xfdf6e3,
 }); // Solarized Base3 (White)
-const committedWireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+const committedWireframeMaterial = new THREE.LineBasicMaterial({
+  color: 0x000000,
+});
 // Material cache for the wall highlights
 const highlightMaterials = {};
 LAYER_COLORS.forEach((color) => {
@@ -135,8 +137,9 @@ function init() {
   clock = new THREE.Clock();
   scene.add(staticMeshes, wallHighlights);
 
+  // Replace your camera creation line with this
   camera = new THREE.PerspectiveCamera(
-    30, // Field of view
+    50,
     window.innerWidth / window.innerHeight,
     0.1,
     1000,
@@ -218,200 +221,235 @@ function createWireframeWell() {
 }
 
 function updateWallHighlights() {
-    wallHighlights.clear();
-    const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
-    const hw = w / 2, hh = h / 2, hd = d / 2;
-    const planeGeom = new THREE.PlaneGeometry(1, 1);
+  wallHighlights.clear();
+  const w = WELL_DIMS.width,
+    h = WELL_DIMS.height,
+    d = WELL_DIMS.depth;
+  const hw = w / 2,
+    hh = h / 2,
+    hd = d / 2;
+  const planeGeom = new THREE.PlaneGeometry(1, 1);
 
-    const addHighlight = (x, y, z, color, wall) => {
-        const material = highlightMaterials[color.getHexString()];
-        if (!material) return; // Failsafe if color not found
+  const addHighlight = (x, y, z, color, wall) => {
+    const material = highlightMaterials[color.getHexString()];
+    if (!material) return; // Failsafe if color not found
 
-        const plane = new THREE.Mesh(planeGeom, material);
-        // Adjust position based on wall
-        switch(wall) {
-            case 'left':
-                plane.position.set(-hw - 0.01, y, z - hd + 0.5);
-                plane.rotation.y = Math.PI / 2;
-                break;
-            case 'right':
-                plane.position.set(hw + 0.01, y, z - hd + 0.5);
-                plane.rotation.y = -Math.PI / 2;
-                break;
-            case 'back':
-                plane.position.set(x - hw + 0.5, y, -hd - 0.01);
-                break;
-        }
-        wallHighlights.add(plane);
-    };
-
-    for (let y = 0; y < h; y++) {
-        // Left Wall
-        for (let z = 0; z < d; z++) {
-            for (let x = 0; x < w; x++) {
-                const group = grid[x][y][z];
-                if (group) {
-                    addHighlight(x, y, z, group.children[0].material.color, 'left');
-                    break;
-                }
-            }
-        }
-        // Right Wall
-        for (let z = 0; z < d; z++) {
-            for (let x = w - 1; x >= 0; x--) {
-                const group = grid[x][y][z];
-                if (group) {
-                    addHighlight(x, y, z, group.children[0].material.color, 'right');
-                    break;
-                }
-            }
-        }
-         // Back Wall
-         for (let x = 0; x < w; x++) {
-            for (let z = 0; z < d; z++) {
-                const group = grid[x][y][z];
-                if (group) {
-                    addHighlight(x, y, z, group.children[0].material.color, 'back');
-                    break;
-                }
-            }
-        }
+    const plane = new THREE.Mesh(planeGeom, material);
+    // Adjust position based on wall
+    switch (wall) {
+      case "left":
+        plane.position.set(-hw - 0.01, y, z - hd + 0.5);
+        plane.rotation.y = Math.PI / 2;
+        break;
+      case "right":
+        plane.position.set(hw + 0.01, y, z - hd + 0.5);
+        plane.rotation.y = -Math.PI / 2;
+        break;
+      case "back":
+        plane.position.set(x - hw + 0.5, y, -hd - 0.01);
+        break;
     }
+    wallHighlights.add(plane);
+  };
+
+  for (let y = 0; y < h; y++) {
+    // Left Wall
+    for (let z = 0; z < d; z++) {
+      for (let x = 0; x < w; x++) {
+        const group = grid[x][y][z];
+        if (group) {
+          addHighlight(x, y, z, group.children[0].material.color, "left");
+          break;
+        }
+      }
+    }
+    // Right Wall
+    for (let z = 0; z < d; z++) {
+      for (let x = w - 1; x >= 0; x--) {
+        const group = grid[x][y][z];
+        if (group) {
+          addHighlight(x, y, z, group.children[0].material.color, "right");
+          break;
+        }
+      }
+    }
+    // Back Wall
+    for (let x = 0; x < w; x++) {
+      for (let z = 0; z < d; z++) {
+        const group = grid[x][y][z];
+        if (group) {
+          addHighlight(x, y, z, group.children[0].material.color, "back");
+          break;
+        }
+      }
+    }
+  }
 }
 
+// Replace your spawnPiece function with this
 function spawnPiece() {
-    if (gameOver) return;
-    const pieceIndex = Math.floor(Math.random() * PIECES.length);
-    activePiece = new THREE.Group();
-    ghostPiece = new THREE.Group();
+  if (gameOver) return;
+  const pieceIndex = Math.floor(Math.random() * PIECES.length);
+  activePiece = new THREE.Group();
+  ghostPiece = new THREE.Group();
 
-    const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
+  const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
 
-    for (const pos of PIECES[pieceIndex].shape) {
-        // Active piece is just a white wireframe now
-        const wireframe = new THREE.LineSegments(edgeGeom, activeWireframeMaterial);
-        wireframe.position.set(...pos);
-        wireframe.scale.set(0.99, 0.99, 0.99); // Scale down to prevent z-fighting
-        activePiece.add(wireframe);
+  for (const pos of PIECES[pieceIndex].shape) {
+    const wireframe = new THREE.LineSegments(edgeGeom, activeWireframeMaterial);
+    wireframe.position.set(...pos);
+    activePiece.add(wireframe);
 
-        // Ghost piece remains the same, but also scaled
-        const ghostWireframeCube = new THREE.LineSegments(edgeGeom, ghostWireframeMaterial);
-        ghostWireframeCube.position.set(...pos);
-        ghostWireframeCube.scale.set(0.99, 0.99, 0.99); // Scale down for consistency
-        ghostPiece.add(ghostWireframeCube);
-    }
+    const ghostWireframeCube = new THREE.LineSegments(
+      edgeGeom,
+      ghostWireframeMaterial,
+    );
+    ghostWireframeCube.position.set(...pos);
+    ghostWireframeCube.scale.set(0.99, 0.99, 0.99);
+    ghostPiece.add(ghostWireframeCube);
+  }
 
-    // --- THIS IS THE FIX ---
-    // Calculate spawn position to align with grid center, works for even/odd dimensions
-    const spawnX = Math.floor(WELL_DIMS.width / 2) - (WELL_DIMS.width / 2 - 0.5);
-    const spawnZ = Math.floor(WELL_DIMS.depth / 2) - (WELL_DIMS.depth / 2 - 0.5);
-    activePiece.position.set(spawnX, WELL_DIMS.height - 3, spawnZ);
-    // ----------------------
+  // --- THIS IS THE FIX ---
+  // Calculate spawn position based on grid alignment, not world center, to prevent out-of-bounds errors.
+  const spawnGridX = Math.floor(WELL_DIMS.width / 2) - 1;
+  const spawnX = spawnGridX - (WELL_DIMS.width / 2 - 0.5);
 
-    scene.add(activePiece, ghostPiece);
-    if (checkCollision(activePiece)) {
-        gameOver = true;
-        document.getElementById('game-over').style.display = 'block';
-        scene.remove(activePiece, ghostPiece);
-    } else {
-        updateGhostPiece();
-    }
+  const spawnGridZ = Math.floor(WELL_DIMS.depth / 2);
+  const spawnZ = spawnGridZ - (WELL_DIMS.depth / 2 - 0.5);
+
+  activePiece.position.set(spawnX, WELL_DIMS.height - 3, spawnZ);
+  // ----------------------
+
+  scene.add(activePiece, ghostPiece);
+  // Animate the piece in
+  if (checkCollision(activePiece)) {
+    gameOver = true;
+    document.getElementById("game-over").style.display = "block";
+    scene.remove(activePiece, ghostPiece);
+  } else {
+    updateGhostPiece();
+
+    isAnimating = true;
+    activePiece.scale.set(0.1, 0.1, 0.1);
+
+    new TWEEN.Tween(activePiece.scale)
+      .to({ x: 0.99, y: 0.99, z: 0.99 }, 300)
+      .easing(TWEEN.Easing.Back.Out)
+      .onComplete(() => {
+        isAnimating = false;
+      })
+      .start();
+  }
 }
 
 function lockPiece() {
-    const tempVec = new THREE.Vector3();
-    const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
+  const tempVec = new THREE.Vector3();
+  const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
 
-    // Iterate through the wireframe segments of the active piece
-    activePiece.children.forEach(wireframeCube => {
-        wireframeCube.getWorldPosition(tempVec);
-        const [gx, gy, gz] = worldToGrid(tempVec);
+  // Iterate through the wireframe segments of the active piece
+  activePiece.children.forEach((wireframeCube) => {
+    wireframeCube.getWorldPosition(tempVec);
+    const [gx, gy, gz] = worldToGrid(tempVec);
 
-        if (grid[gx]?.[gy] !== undefined && gy >= 0) {
-            // Determine color based on the Y-level (layer)
-            const layerColor = LAYER_COLORS[gy % LAYER_COLORS.length];
-            const staticMaterial = new THREE.MeshStandardMaterial({ color: layerColor });
+    if (grid[gx]?.[gy] !== undefined && gy >= 0) {
+      // Determine color based on the Y-level (layer)
+      const layerColor = LAYER_COLORS[gy % LAYER_COLORS.length];
+      const staticMaterial = new THREE.MeshStandardMaterial({
+        color: layerColor,
+      });
 
-            // Create the solid cube and its black wireframe
-            const staticCube = new THREE.Mesh(baseBoxGeometry, staticMaterial);
-            staticCube.castShadow = true;
-            const staticWireframe = new THREE.LineSegments(edgeGeom, committedWireframeMaterial);
-            
-            // --- THIS IS THE FIX ---
-            // Scale the wireframe slightly larger to sit outside the cube
-            staticWireframe.scale.set(1.01, 1.01, 1.01);
+      // Create the solid cube and its black wireframe
+      const staticCube = new THREE.Mesh(baseBoxGeometry, staticMaterial);
+      staticCube.castShadow = true;
+      const staticWireframe = new THREE.LineSegments(
+        edgeGeom,
+        committedWireframeMaterial,
+      );
 
-            // Group the cube and its wireframe together
-            const cubeletGroup = new THREE.Group();
-            cubeletGroup.add(staticCube);
-            cubeletGroup.add(staticWireframe);
-            cubeletGroup.position.copy(tempVec);
+      // --- THIS IS THE FIX ---
+      // Scale the wireframe slightly larger to sit outside the cube
+      staticWireframe.scale.set(1.01, 1.01, 1.01);
 
-            // Add the group to the grid and the scene
-            grid[gx][gy][gz] = cubeletGroup;
-            staticMeshes.add(cubeletGroup);
-        }
-    });
+      // Group the cube and its wireframe together
+      const cubeletGroup = new THREE.Group();
+      cubeletGroup.add(staticCube);
+      cubeletGroup.add(staticWireframe);
+      cubeletGroup.position.copy(tempVec);
 
-    scene.remove(activePiece, ghostPiece);
-    activePiece = ghostPiece = null;
-    checkAndClearLayers();
-    updateWallHighlights();
-    spawnPiece();
-    isTouchingFloor = false;
-    lockDelayTimer = 0;
+      // Add the group to the grid and the scene
+      grid[gx][gy][gz] = cubeletGroup;
+      staticMeshes.add(cubeletGroup);
+    }
+  });
+
+  scene.remove(activePiece, ghostPiece);
+  activePiece = ghostPiece = null;
+  checkAndClearLayers();
+  updateWallHighlights();
+  spawnPiece();
+  isTouchingFloor = false;
+  lockDelayTimer = 0;
 }
 
 function checkAndClearLayers() {
-    let layersCleared = 0;
-    for (let y = 0; y < WELL_DIMS.height; y++) {
-        let isFull = true;
-        for (let x = 0; x < WELL_DIMS.width; x++) {
-            for (let z = 0; z < WELL_DIMS.depth; z++) {
-                if (!grid[x][y][z]) {
-                    isFull = false;
-                    break;
-                }
-            }
-            if (!isFull) break;
+  let layersCleared = 0;
+  for (let y = 0; y < WELL_DIMS.height; y++) {
+    let isFull = true;
+    for (let x = 0; x < WELL_DIMS.width; x++) {
+      for (let z = 0; z < WELL_DIMS.depth; z++) {
+        if (!grid[x][y][z]) {
+          isFull = false;
+          break;
         }
-        if (!isFull) continue;
-
-        layersCleared++;
-        for (let x = 0; x < WELL_DIMS.width; x++) {
-            for (let z = 0; z < WELL_DIMS.depth; z++) {
-                const cubeletGroup = grid[x][y][z];
-                if (!cubeletGroup) continue;
-
-                // Properly dispose of the group's children (cube and wireframe)
-                cubeletGroup.children.forEach(child => {
-                    if (child.geometry) child.geometry.dispose();
-                    if (child.material) child.material.dispose();
-                });
-
-                staticMeshes.remove(cubeletGroup);
-                grid[x][y][z] = null;
-            }
-        }
-
-        // Shift layers down
-        for (let yi = y; yi < WELL_DIMS.height - 1; yi++) {
-            for (let x = 0; x < WELL_DIMS.width; x++) {
-                for (let z = 0; z < WELL_DIMS.depth; z++) {
-                    const groupToMove = grid[x][yi + 1][z];
-                    grid[x][yi][z] = groupToMove;
-                    if (groupToMove) {
-                        groupToMove.position.y--;
-                    }
-                }
-            }
-        }
-        y--; // Re-check the current layer index since we shifted everything down
+      }
+      if (!isFull) break;
     }
-    if (layersCleared > 0) {
-        score += (100 * layersCleared) * layersCleared;
-        document.getElementById('score').innerText = score;
+    if (!isFull) continue;
+
+    layersCleared++;
+    // Clear the full layer
+    for (let x = 0; x < WELL_DIMS.width; x++) {
+      for (let z = 0; z < WELL_DIMS.depth; z++) {
+        const cubeletGroup = grid[x][y][z];
+        if (!cubeletGroup) continue;
+
+        cubeletGroup.children.forEach((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+
+        staticMeshes.remove(cubeletGroup);
+        grid[x][y][z] = null;
+      }
     }
+
+    // Shift all layers above down
+    for (let yi = y; yi < WELL_DIMS.height - 1; yi++) {
+      for (let x = 0; x < WELL_DIMS.width; x++) {
+        for (let z = 0; z < WELL_DIMS.depth; z++) {
+          const groupToMove = grid[x][yi + 1][z];
+          grid[x][yi][z] = groupToMove;
+          if (groupToMove) {
+            groupToMove.position.y--;
+          }
+        }
+      }
+    }
+
+    // --- THIS IS THE FIX ---
+    // Explicitly clear the top-most layer in the grid
+    for (let x = 0; x < WELL_DIMS.width; x++) {
+      for (let z = 0; z < WELL_DIMS.depth; z++) {
+        grid[x][WELL_DIMS.height - 1][z] = null;
+      }
+    }
+
+    y--; // Re-check the current layer index since we shifted everything down
+  }
+  if (layersCleared > 0) {
+    score += 100 * layersCleared * layersCleared;
+    document.getElementById("score").innerText = score;
+  }
 }
 
 function onWindowResize() {
@@ -509,65 +547,67 @@ function movePiece(x, y, z) {
 }
 
 function rotatePiece(axis, angle) {
-    if (!activePiece || gameOver || isAnimating) return false;
+  if (!activePiece || gameOver || isAnimating) return false;
 
-    // Create a clone to calculate the final valid rotation and position
-    const clone = activePiece.clone();
-    clone.position.copy(activePiece.position); // Ensure clone is at the right spot
-    clone.rotateOnWorldAxis(axis, angle);
+  // Create a clone to calculate the final valid rotation and position
+  const clone = activePiece.clone();
+  clone.position.copy(activePiece.position); // Ensure clone is at the right spot
+  clone.rotateOnWorldAxis(axis, angle);
 
-    let targetPosition = activePiece.position.clone();
-    let isValidMove = false;
+  let targetPosition = activePiece.position.clone();
+  let isValidMove = false;
 
-    // Check if the new rotation is valid as-is
-    if (!checkCollision(clone)) {
+  // Check if the new rotation is valid as-is
+  if (!checkCollision(clone)) {
+    isValidMove = true;
+  } else {
+    // If not, try "wall kicking" the clone to find a valid spot
+    const kicks = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 0, -1),
+    ];
+    for (const kick of kicks) {
+      clone.position.add(kick);
+      if (!checkCollision(clone)) {
         isValidMove = true;
-    } else {
-        // If not, try "wall kicking" the clone to find a valid spot
-        const kicks = [
-            new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-            new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
-        ];
-        for (const kick of kicks) {
-            clone.position.add(kick);
-            if (!checkCollision(clone)) {
-                isValidMove = true;
-                targetPosition.copy(clone.position); // This is our new target
-                break;
-            }
-            clone.position.sub(kick); // Revert test
-        }
+        targetPosition.copy(clone.position); // This is our new target
+        break;
+      }
+      clone.position.sub(kick); // Revert test
     }
+  }
 
-    // If a valid final state was found, animate to it
-    if (isValidMove) {
-        isAnimating = true;
-        const duration = 150; // Animation time in milliseconds
-        const targetQuaternion = clone.quaternion;
+  // If a valid final state was found, animate to it
+  if (isValidMove) {
+    isAnimating = true;
+    const duration = 150; // Animation time in milliseconds
+    const targetQuaternion = clone.quaternion;
 
-        new TWEEN.Tween(activePiece.position)
-            .to(targetPosition, duration)
-            .easing(TWEEN.Easing.Quadratic.Out)
-            .start();
+    new TWEEN.Tween(activePiece.position)
+      .to(targetPosition, duration)
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .start();
 
-        new TWEEN.Tween(activePiece.quaternion)
-            .to(targetQuaternion, duration)
-            .easing(TWEEN.Easing.Quadratic.Out)
-            .onUpdate(updateGhostPiece) // Keep ghost updated during animation
-            .onComplete(() => {
-                isAnimating = false;
-                // Snap to final values for precision
-                activePiece.position.copy(targetPosition);
-                activePiece.quaternion.copy(targetQuaternion);
-                if (isTouchingFloor) lockDelayTimer = 0;
-                updateGhostPiece();
-            })
-            .start();
+    new TWEEN.Tween(activePiece.quaternion)
+      .to(targetQuaternion, duration)
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .onUpdate(updateGhostPiece) // Keep ghost updated during animation
+      .onComplete(() => {
+        isAnimating = false;
+        // Snap to final values for precision
+        activePiece.position.copy(targetPosition);
+        activePiece.quaternion.copy(targetQuaternion);
+        if (isTouchingFloor) lockDelayTimer = 0;
+        updateGhostPiece();
+      })
+      .start();
 
-        return true;
-    }
+    return true;
+  }
 
-    return false; // The rotation was not possible
+  return false; // The rotation was not possible
 }
 
 function hardDrop() {
@@ -634,7 +674,13 @@ function onTouchStart(event) {
 
 function onTouchMove(event) {
   event.preventDefault();
-  if (!isDragging || !activePiece || gameOver || event.touches.length > 1 || isAnimating)
+  if (
+    !isDragging ||
+    !activePiece ||
+    gameOver ||
+    event.touches.length > 1 ||
+    isAnimating
+  )
     return;
 
   const touch = event.touches[0];
