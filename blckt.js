@@ -5,7 +5,7 @@ const WELL_DIMS = { width: 6, height: 12, depth: 5 };
 const TICK_RATE_MS = 800;
 const LOCK_DELAY_MS = 500;
 const CAMERA_CONFIG = {
-  pos: new THREE.Vector3(0, WELL_DIMS.height * 1.3, 0),
+  pos: new THREE.Vector3(0, WELL_DIMS.height * 1.8, 0),
   lookAt: new THREE.Vector3(0, WELL_DIMS.height * 0.35, 0),
 };
 
@@ -136,7 +136,7 @@ function init() {
   scene.add(staticMeshes, wallHighlights);
 
   camera = new THREE.PerspectiveCamera(
-    75,
+    30, // Field of view
     window.innerWidth / window.innerHeight,
     0.1,
     1000,
