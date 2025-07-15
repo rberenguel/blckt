@@ -1,351 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>3D Blockout</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.1/dist/tween.umd.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #333; }
-        canvas { display: block; }
-        #info {
-            position: absolute;
-            top: 10px;
-            width: 100%;
-            text-align: center;
-            color: #93a1a1; /* Solarized Base1 */
-            font-family: monospace;
-            font-size: 24px;
-            text-shadow: 1px 1px 2px #000;
-            z-index: 100;
-        }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #333;
+
+        /* Prevent zooming and scrolling */
+        touch-action: none;
+
+        /* Disable text selection */
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+
+        /* Disable callout menu on long-press (iOS) */
+        -webkit-touch-callout: none;
+
+        /* Remove the highlight color on tap */
+        -webkit-tap-highlight-color: transparent;
+      }
+      canvas {
+        display: block;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        width: 100%;
+        text-align: center;
+        color: #93a1a1; /* Solarized Base1 */
+        font-family: monospace;
+        font-size: 24px;
+        text-shadow: 1px 1px 2px #000;
+        z-index: 100;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div id="info">
-        <div>Score: <span id="score">0</span></div>
-        <div id="game-over" style="display:none; color: #dc322f;">GAME OVER</div>
+      <div>Score: <span id="score">0</span></div>
+      <div id="game-over" style="display: none; color: #dc322f">GAME OVER</div>
     </div>
     <canvas id="bg"></canvas>
-    <script type="module">
-        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js';
-
-        // --- Configuration ---
-        const WELL_DIMS = { width: 7, height: 20, depth: 7 };
-        const TICK_RATE_MS = 800;
-        const LOCK_DELAY_MS = 500;
-        const CAMERA_CONFIG = {
-            pos: new THREE.Vector3(0, WELL_DIMS.height * 0.75, WELL_DIMS.depth * 1.9),
-            lookAt: new THREE.Vector3(0, WELL_DIMS.height * 0.35, 0)
-        };
-
-        // --- Core Components ---
-        let scene, camera, renderer, clock, dirLight;
-        let activePiece = null, ghostPiece = null;
-        let grid = [], staticMeshes = new THREE.Group(), wallHighlights = new THREE.Group();
-        let score = 0, lastTick = 0, lockDelayTimer = 0;
-        let isTouchingFloor = false, gameOver = false;
-
-        // --- Piece Definitions & Materials ---
-        const PIECES = [
-            { color: 0x2aa198, shape: [[-1,0,0], [0,0,0], [1,0,0], [2,0,0]] }, // Cyan
-            { color: 0xb58900, shape: [[0,0,0], [1,0,0], [0,1,0], [1,1,0]] }, // Yellow
-            { color: 0x6c71c4, shape: [[-1,0,0], [0,0,0], [1,0,0], [0,1,0]] }, // Violet
-            { color: 0xcb4b16, shape: [[-1,1,0], [0,1,0], [0,0,0], [1,0,0]] }, // Orange
-            { color: 0x859900, shape: [[-1,0,0], [0,0,0], [0,1,0], [1,1,0]] }, // Green
-            { color: 0x268bd2, shape: [[-1,0,0], [0,0,0], [1,0,0], [1,1,0]] }, // Blue
-            { color: 0xdc322f, shape: [[0,0,0], [0,1,0], [0,0,1]] },             // Red
-            { color: 0xd33682, shape: [[0,0,0], [1,0,0], [0,1,0], [0,0,1]] }, // Magenta
-            { color: 0x839496, shape: [[0,0,0], [-1,0,0], [0,1,0], [0,0,1]] }  // Base0
-        ];
-        const pieceMaterials = PIECES.map(p => new THREE.MeshStandardMaterial({ color: p.color }));
-        const highlightMaterials = {}; // Cache for highlight materials
-        PIECES.forEach(p => {
-             highlightMaterials[p.color] = new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
-        });
-        const baseBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
-        const ghostWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xb58900 });
-
-        function init() {
-            scene = new THREE.Scene();
-            clock = new THREE.Clock();
-            scene.add(staticMeshes, wallHighlights);
-
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.copy(CAMERA_CONFIG.pos);
-            camera.lookAt(CAMERA_CONFIG.lookAt);
-
-            renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#bg'), antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.shadowMap.enabled = true;
-            renderer.setClearColor(0x333333);
-
-            scene.add(new THREE.AmbientLight(0x93a1a1));
-            dirLight = new THREE.DirectionalLight(0xfdf6e3, 0.8);
-            dirLight.position.set(WELL_DIMS.width, WELL_DIMS.height, WELL_DIMS.depth);
-            dirLight.castShadow = true;
-            dirLight.shadow.bias = -0.001;
-            scene.add(dirLight);
-            
-            grid = Array.from({ length: WELL_DIMS.width }, () =>
-                Array.from({ length: WELL_DIMS.height }, () =>
-                    Array(WELL_DIMS.depth).fill(null)
-                )
-            );
-            
-            createWireframeWell();
-            
-            window.addEventListener('keydown', handleKeyDown);
-            window.addEventListener('resize', onWindowResize);
-
-            spawnPiece();
-            animate();
-        }
-
-        function createWireframeWell() {
-            const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
-            const hw = w / 2, hd = d / 2;
-            const points = [];
-            
-            // Horizontal lines
-            for (let y = 0; y <= h; y++) {
-                points.push(-hw, y - 0.5, -hd,   hw, y - 0.5, -hd);
-                points.push(-hw, y - 0.5,  hd,   hw, y - 0.5,  hd);
-                points.push(-hw, y - 0.5, -hd,  -hw, y - 0.5,  hd);
-                points.push( hw, y - 0.5, -hd,   hw, y - 0.5,  hd);
-            }
-            // Vertical lines
-            for (let x = -hw; x <= hw; x++) {
-                points.push(x, -0.5, -hd, x, h - 0.5, -hd);
-                points.push(x, -0.5,  hd, x, h - 0.5,  hd);
-            }
-            for (let z = -hd; z <= hd; z++) {
-                points.push(-hw, -0.5, z, -hw, h - 0.5, z);
-                points.push( hw, -0.5, z,  hw, h - 0.5, z);
-            }
-
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-            const material = new THREE.LineBasicMaterial({ color: 0x2aa198 }); // Solarized Cyan
-            const wireframe = new THREE.LineSegments(geometry, material);
-            scene.add(wireframe);
-        }
-
-        function updateWallHighlights() {
-            wallHighlights.clear();
-            const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
-            const hw = w / 2, hh = h / 2, hd = d / 2;
-            const planeGeom = new THREE.PlaneGeometry(1, 1);
-
-            const addHighlight = (x, y, z, color, wall) => {
-                const material = highlightMaterials[color.getHexString()];
-                const plane = new THREE.Mesh(planeGeom, material);
-                plane.position.set(x - hw + 0.5, y, z - hd + 0.5);
-                switch(wall) {
-                    case 'left':  plane.position.x = -hw - 0.01; plane.rotation.y = Math.PI/2; break;
-                    case 'right': plane.position.x = hw + 0.01; plane.rotation.y = -Math.PI/2; break;
-                    case 'back':  plane.position.z = -hd - 0.01; break;
-                }
-                wallHighlights.add(plane);
-            };
-
-            for (let y = 0; y < h; y++) {
-                for (let z = 0; z < d; z++) { // Left Wall
-                    for (let x = 0; x < w; x++) if (grid[x][y][z]) {
-                        addHighlight(x, y, z, grid[x][y][z].material.color, 'left');
-                        break;
-                    }
-                }
-                for (let z = 0; z < d; z++) { // Right Wall
-                    for (let x = w - 1; x >= 0; x--) if (grid[x][y][z]) {
-                        addHighlight(x, y, z, grid[x][y][z].material.color, 'right');
-                        break;
-                    }
-                }
-                 for (let x = 0; x < w; x++) { // Back Wall
-                    for (let z = 0; z < d; z++) if (grid[x][y][z]) {
-                        addHighlight(x, y, z, grid[x][y][z].material.color, 'back');
-                        break;
-                    }
-                }
-            }
-        }
-
-        function spawnPiece() {
-            if (gameOver) return;
-            const pieceIndex = Math.floor(Math.random() * PIECES.length);
-            activePiece = new THREE.Group();
-            ghostPiece = new THREE.Group();
-            
-            for (const pos of PIECES[pieceIndex].shape) {
-                const solidCube = new THREE.Mesh(baseBoxGeometry, pieceMaterials[pieceIndex]);
-                solidCube.position.set(...pos);
-                solidCube.castShadow = true;
-                activePiece.add(solidCube);
-                
-                const wireframeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
-                const wireframeCube = new THREE.LineSegments(wireframeGeom, ghostWireframeMaterial);
-                wireframeCube.position.set(...pos);
-                ghostPiece.add(wireframeCube);
-            }
-
-            activePiece.position.set(0, WELL_DIMS.height - 3, 0);
-            scene.add(activePiece, ghostPiece);
-            if (checkCollision(activePiece)) {
-                gameOver = true;
-                document.getElementById('game-over').style.display = 'block';
-                scene.remove(activePiece, ghostPiece);
-            } else updateGhostPiece();
-        }
-
-        function lockPiece() {
-            const tempVec = new THREE.Vector3();
-            activePiece.children.forEach(cube => {
-                cube.getWorldPosition(tempVec);
-                const [gx, gy, gz] = worldToGrid(tempVec);
-                if (grid[gx]?.[gy] !== undefined) {
-                    const staticCube = cube.clone();
-                    staticCube.position.copy(tempVec);
-                    staticCube.quaternion.identity();
-                    grid[gx][gy][gz] = staticCube;
-                    staticMeshes.add(staticCube);
-                }
-            });
-            scene.remove(activePiece, ghostPiece);
-            activePiece = ghostPiece = null;
-            checkAndClearLayers();
-            updateWallHighlights();
-            spawnPiece();
-            isTouchingFloor = false;
-            lockDelayTimer = 0;
-        }
-        
-        function checkAndClearLayers() {
-            let layersCleared = 0;
-            for (let y = 0; y < WELL_DIMS.height; y++) {
-                let isFull = true;
-                for (let x = 0; x < WELL_DIMS.width; x++) for (let z = 0; z < WELL_DIMS.depth; z++) {
-                    if (!grid[x][y][z]) { isFull = false; break; }
-                }
-                if (!isFull) continue;
-                
-                layersCleared++;
-                for (let x = 0; x < WELL_DIMS.width; x++) for (let z = 0; z < WELL_DIMS.depth; z++) {
-                    if(!grid[x][y][z]) continue;
-                    staticMeshes.remove(grid[x][y][z]);
-                    grid[x][y][z].geometry.dispose();
-                    grid[x][y][z] = null;
-                }
-                for (let yi = y; yi < WELL_DIMS.height - 1; yi++) for (let x = 0; x < WELL_DIMS.width; x++) for (let z = 0; z < WELL_DIMS.depth; z++) {
-                    grid[x][yi][z] = grid[x][yi + 1][z];
-                    if (grid[x][yi][z]) grid[x][yi][z].position.y--;
-                }
-                y--;
-            }
-            if (layersCleared > 0) {
-                score += (100 * layersCleared) * layersCleared;
-                document.getElementById('score').innerText = score;
-            }
-        }
-        
-        function handleKeyDown(event) {
-            if (!activePiece || gameOver) return;
-            let moved = false;
-            const move = (x, y, z) => {
-                activePiece.position.add(new THREE.Vector3(x, y, z));
-                if (checkCollision(activePiece)) activePiece.position.sub(new THREE.Vector3(x, y, z));
-                else moved = true;
-            };
-            const rotate = (axis, angle) => {
-                activePiece.rotateOnWorldAxis(axis, angle);
-                if (checkCollision(activePiece)) activePiece.rotateOnWorldAxis(axis, -angle);
-                else moved = true;
-            };
-
-            if (event.code === 'Space') {
-                event.preventDefault();
-                activePiece.position.copy(ghostPiece.position);
-                lockPiece();
-                return;
-            }
-            
-            switch (event.key.toLowerCase()) {
-                case 'n': move(-1, 0, 0); break;
-                case 'o': move(1, 0, 0); break;
-                case 'i': move(0, 0, -1); break;
-                case 'e': move(0, 0, 1); break;
-                case 'a': rotate(new THREE.Vector3(1, 0, 0), Math.PI / 2); break;
-                case 'r': rotate(new THREE.Vector3(0, 1, 0), Math.PI / 2); break;
-                case 's': rotate(new THREE.Vector3(0, 0, 1), Math.PI / 2); break;
-            }
-
-            if (moved) {
-                if (isTouchingFloor) lockDelayTimer = 0;
-                updateGhostPiece();
-            }
-        }
-        
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function worldToGrid(worldPos) {
-            return [
-                Math.round(worldPos.x + (WELL_DIMS.width / 2 - 0.5)),
-                Math.round(worldPos.y - 0.5),
-                Math.round(worldPos.z + (WELL_DIMS.depth / 2 - 0.5))
-            ];
-        }
-
-        function updateGhostPiece() {
-            if (!activePiece) return;
-            ghostPiece.position.copy(activePiece.position);
-            ghostPiece.quaternion.copy(activePiece.quaternion);
-            while (!checkCollision(ghostPiece)) ghostPiece.position.y--;
-            ghostPiece.position.y++;
-        }
-
-        function checkCollision(piece) {
-            const tempVec = new THREE.Vector3();
-            for (const cube of piece.children) {
-                cube.getWorldPosition(tempVec);
-                const [gx, gy, gz] = worldToGrid(tempVec);
-                if (gy < 0 || gy >= WELL_DIMS.height || gx < 0 || gx >= WELL_DIMS.width || gz < 0 || gz >= WELL_DIMS.depth) return true;
-                if (grid[gx]?.[gy]?.[gz]) return true;
-            }
-            return false;
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            const delta = clock.getDelta();
-            if (gameOver || !activePiece) {
-                renderer.render(scene, camera);
-                return;
-            }
-            lastTick += delta;
-            if (isTouchingFloor) lockDelayTimer += delta;
-
-            if (lockDelayTimer > LOCK_DELAY_MS / 1000) {
-                lockPiece();
-            } else if (lastTick > TICK_RATE_MS / 1000) {
-                lastTick = 0;
-                activePiece.position.y--;
-                if (checkCollision(activePiece)) {
-                    activePiece.position.y++;
-                    isTouchingFloor = true;
-                    if(lockDelayTimer === 0) lockDelayTimer = 0.001;
-                } else {
-                    isTouchingFloor = false;
-                    lockDelayTimer = 0;
-                }
-            }
-            renderer.render(scene, camera);
-        }
-
-        init();
-    </script>
-</body>
+    <script type="module" src="blckt.js"></script>
+  </body>
 </html>
