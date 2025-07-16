@@ -31,6 +31,7 @@ let gameHasStarted = false;
 let isPaused = false;
 let shakeDuration = 0,
   shakeMagnitude = 0;
+let particleSystems = [];
 
 // --- Piece Definitions & Materials ---
 const PIECES = [
@@ -136,13 +137,58 @@ LAYER_COLORS.forEach((color) => {
 const baseBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
 const ghostWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xb58900 });
 
+function createExplosion(position, color) {
+  const particleCount = 200;
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(particleCount * 3);
+  const velocities = [];
+
+  for (let i = 0; i < particleCount; i++) {
+    positions[i * 3] = 0;
+    positions[i * 3 + 1] = 0;
+    positions[i * 3 + 2] = 0;
+    const velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 4,
+      (Math.random() - 0.5) * 4 + 2,
+      (Math.random() - 0.5) * 4,
+    );
+    velocities.push(velocity);
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+  const material = new THREE.PointsMaterial({
+    color: color,
+    size: 0.08,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+
+  const particles = new THREE.Points(geometry, material);
+  particles.position.copy(position);
+  scene.add(particles);
+
+  particleSystems.push({
+    mesh: particles,
+    velocities: velocities,
+    lifetime: 1.5,
+  });
+}
+
 function triggerShake(magnitude, duration) {
   shakeMagnitude = magnitude;
   shakeDuration = duration;
 }
 
 function togglePause() {
-  if (gameOver || !gameHasStarted) return;
+  if (gameOver) return;
+
+  if (!gameHasStarted) {
+    document.getElementById("pause-menu").style.display = "none";
+    startGame();
+    return;
+  }
+
   isPaused = !isPaused;
   const pauseMenu = document.getElementById("pause-menu");
   pauseMenu.style.display = isPaused ? "block" : "none";
@@ -194,13 +240,12 @@ function init() {
     passive: false,
   });
 
-  document
-    .getElementById("start-message")
-    .addEventListener("click", startGame, { once: true });
+  document.getElementById("pause-menu").style.display = "block";
   document.getElementById("game-over").addEventListener("click", restartGame);
   document
     .getElementById("score-container")
     .addEventListener("click", togglePause);
+  document.getElementById("pause-menu").addEventListener("click", togglePause);
   animate();
 }
 
@@ -472,6 +517,12 @@ function checkAndClearLayers() {
       for (let z = 0; z < WELL_DIMS.depth; z++) {
         const cubeletGroup = grid[x][y][z];
         if (!cubeletGroup) continue;
+
+        const worldPos = new THREE.Vector3();
+        cubeletGroup.getWorldPosition(worldPos);
+        const color = cubeletGroup.children[0].material.color;
+        createExplosion(worldPos, color);
+
         cubeletGroup.children.forEach((child) => {
           if (child.geometry) child.geometry.dispose();
           if (child.material) child.material.dispose();
@@ -587,6 +638,29 @@ function animate() {
         lockDelayTimer = 0;
       }
     }
+  }
+
+  for (let i = particleSystems.length - 1; i >= 0; i--) {
+    const system = particleSystems[i];
+    system.lifetime -= delta;
+
+    if (system.lifetime <= 0) {
+      scene.remove(system.mesh);
+      system.mesh.geometry.dispose();
+      system.mesh.material.dispose();
+      particleSystems.splice(i, 1);
+      continue;
+    }
+
+    system.mesh.material.opacity = system.lifetime;
+    const positions = system.mesh.geometry.attributes.position.array;
+    for (let j = 0; j < system.velocities.length; j++) {
+      system.velocities[j].y -= 5.0 * delta; // gravity
+      positions[j * 3] += system.velocities[j].x * delta;
+      positions[j * 3 + 1] += system.velocities[j].y * delta;
+      positions[j * 3 + 2] += system.velocities[j].z * delta;
+    }
+    system.mesh.geometry.attributes.position.needsUpdate = true;
   }
 
   const targetCamPos = CAMERA_CONFIG.pos.clone();
@@ -892,7 +966,6 @@ function onTouchEnd(event) {
 }
 
 function startGame() {
-  document.getElementById("start-message").style.display = "none";
   gameHasStarted = true;
   spawnPiece();
 }

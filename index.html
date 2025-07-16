@@ -5,21 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BLCKT</title>
     <link rel="manifest" href="./manifest.json" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sixtyfour&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./fonts/inter.css" />
+    <link rel="stylesheet" href="./fonts/monoid.css" />
     <script src="https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.1/dist/tween.umd.js"></script>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div id="info">
-      <div id="start-message">
-        <p>Click to Start</p>
-      </div>
       <div id="score-container">Score: <span id="score">0</span></div>
       <div id="game-over">
         GAME OVER<br /><small>(click/tap/<code>space</code> to restart)</small>
       </div>
     </div>
     <div id="pause-menu">
-      <h2>PAUSED</h2>
+      <h1 id="game-title">BLCKT</h1>
       <div class="controls-container">
         <div class="controls-section">
           <h3>Standard Controls</h3>
@@ -34,7 +39,15 @@
           <p><b>A + Keys:</b> Rotate</p>
           <p><b>R:</b> Spin Piece</p>
         </div>
+        <div class="controls-section">
+          <h3>Touch Controls</h3>
+          <p><b>Drag on Left:</b> Move Piece</p>
+          <p><b>Hold on Right:</b> Fast Drop</p>
+          <p><b>Hold on Left, Drag Right:</b> Rotate</p>
+          <p><b>Hold on Left, Tap Right:</b> Spin</p>
+        </div>
       </div>
+      <h2>PAUSED</h2>
       <p><small>(ESC or click score to resume)</small></p>
     </div>
     <canvas id="bg"></canvas>

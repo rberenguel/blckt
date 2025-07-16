@@ -17,17 +17,24 @@ body {
 
   /* Remove the highlight color on tap */
   -webkit-tap-highlight-color: transparent;
+  font-family: "Inter", sans-serif;
 }
 canvas {
   display: block;
 }
+
+#game-title {
+  font-family: "Sixtyfour", sans-serif;
+  color: #2aa198;
+}
+
 #info {
   position: absolute;
   top: 10px;
   width: 100%;
   text-align: center;
   color: #93a1a1; /* Solarized Base1 */
-  font-family: monospace;
+  font-family: "monoidregular", monospace;
   font-size: 24px;
   text-shadow: 1px 1px 2px #000;
   z-index: 100;
@@ -36,12 +43,6 @@ canvas {
   display: none;
   color: #dc322f;
   cursor: pointer;
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-#start-message {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -60,10 +61,10 @@ canvas {
   border: 1px solid #2aa198; /* Solarized Cyan */
   border-radius: 8px;
   text-align: center;
-  font-family: monospace;
+  font-family: "monoidregular", monospace;
   font-size: 16px;
   z-index: 200;
-  min-width: 350px;
+  min-width: 400px;
 }
 .controls-container {
   display: flex;
@@ -88,4 +89,38 @@ canvas {
 }
 #pause-menu small {
   color: #839496; /* Solarized Base0 */
+}
+
+/* General styles for small screens (font size, etc.) */
+@media screen and (max-width: 768px) {
+  #pause-menu {
+    font-size: 12px;
+    padding: 0.5em 1em;
+    min-width: 400px;
+    width: 80%;
+    height: 70%;
+    border-width: 1px;
+  }
+
+  #pause-menu h2 {
+    font-size: 20px;
+  }
+
+  #pause-menu h3 {
+    font-size: 14px;
+  }
+}
+
+/* Layout style ONLY for portrait mode on small screens */
+@media screen and (max-width: 768px) and (orientation: portrait) {
+  #pause-menu {
+    width: 80%;
+    height: auto;
+    min-width: 280px;
+  }
+  .controls-container {
+    flex-direction: column;
+    gap: 1em;
+    margin: 1em 0;
+  }
 }
