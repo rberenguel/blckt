@@ -109,6 +109,9 @@ canvas {
   #pause-menu h3 {
     font-size: 14px;
   }
+  #score-container {
+    font-size: 10px;
+  }
 }
 
 /* Layout style ONLY for portrait mode on small screens */

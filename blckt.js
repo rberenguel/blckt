@@ -228,7 +228,11 @@ function init() {
   createWireframeWell();
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
-  window.addEventListener("resize", onWindowResize);
+  let resizeTimeout;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(onWindowResize, 100); // Wait 100ms
+  });
 
   renderer.domElement.addEventListener("touchstart", onTouchStart, {
     passive: false,
