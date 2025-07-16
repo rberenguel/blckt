@@ -374,31 +374,51 @@ function spawnPiece() {
 }
 
 function lockPiece() {
-  const tempVec = new THREE.Vector3();
   const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
+  const cubeletsToCreate = [];
+
+  // Step 1: First, calculate all the properties for the cubes to be created.
+  // This isolates the calculation for each cubelet, preventing bugs.
   activePiece.children.forEach((wireframeCube) => {
-    wireframeCube.getWorldPosition(tempVec);
-    const [gx, gy, gz] = worldToGrid(tempVec);
+    const worldPos = new THREE.Vector3();
+    wireframeCube.getWorldPosition(worldPos);
+    console.log(worldPos)
+    const [gx, gy, gz] = worldToGrid(worldPos);
+
     if (grid[gx]?.[gy] !== undefined && gy >= 0) {
-      const layerColor = LAYER_COLORS[gy % LAYER_COLORS.length];
-      const staticMaterial = new THREE.MeshStandardMaterial({
-        color: layerColor,
+        console.log(gy, wireframeCube)
+      const color = LAYER_COLORS[gy % LAYER_COLORS.length];
+      console.log(color)
+      cubeletsToCreate.push({
+        position: worldPos,
+        gridPos: { x: gx, y: gy, z: gz },
+        color: color,
       });
-      const staticCube = new THREE.Mesh(baseBoxGeometry, staticMaterial);
-      staticCube.castShadow = true;
-      const staticWireframe = new THREE.LineSegments(
-        edgeGeom,
-        committedWireframeMaterial,
-      );
-      staticWireframe.scale.set(1.01, 1.01, 1.01);
-      const cubeletGroup = new THREE.Group();
-      cubeletGroup.add(staticCube);
-      cubeletGroup.add(staticWireframe);
-      cubeletGroup.position.copy(tempVec);
-      grid[gx][gy][gz] = cubeletGroup;
-      staticMeshes.add(cubeletGroup);
     }
   });
+
+  // Step 2: Now, create all the meshes using the pre-calculated properties.
+  cubeletsToCreate.forEach((data) => {
+    const staticMaterial = new THREE.MeshStandardMaterial({ color: data.color });
+    const staticCube = new THREE.Mesh(baseBoxGeometry, staticMaterial);
+    staticCube.castShadow = true;
+
+    const staticWireframe = new THREE.LineSegments(
+      edgeGeom,
+      committedWireframeMaterial,
+    );
+    staticWireframe.scale.set(1.01, 1.01, 1.01);
+
+    const cubeletGroup = new THREE.Group();
+    cubeletGroup.add(staticCube);
+    cubeletGroup.add(staticWireframe);
+    cubeletGroup.position.copy(data.position);
+
+    const { x, y, z } = data.gridPos;
+    grid[x][y][z] = cubeletGroup;
+    staticMeshes.add(cubeletGroup);
+  });
+
   scene.remove(activePiece, ghostPiece);
   activePiece = ghostPiece = null;
   checkAndClearLayers();
@@ -421,7 +441,9 @@ function checkAndClearLayers() {
       }
       if (!isFull) break;
     }
+
     if (!isFull) continue;
+
     layersCleared++;
     for (let x = 0; x < WELL_DIMS.width; x++) {
       for (let z = 0; z < WELL_DIMS.depth; z++) {
@@ -435,15 +457,22 @@ function checkAndClearLayers() {
         grid[x][y][z] = null;
       }
     }
+
     for (let yi = y; yi < WELL_DIMS.height - 1; yi++) {
       for (let x = 0; x < WELL_DIMS.width; x++) {
         for (let z = 0; z < WELL_DIMS.depth; z++) {
           const groupToMove = grid[x][yi + 1][z];
           grid[x][yi][z] = groupToMove;
-          if (groupToMove) groupToMove.position.y--;
+          if (groupToMove) {
+            groupToMove.position.y--;
+            const newLayerColor = LAYER_COLORS[yi % LAYER_COLORS.length];
+            const mesh = groupToMove.children[0];
+            mesh.material.color.set(newLayerColor);
+          }
         }
       }
     }
+
     for (let x = 0; x < WELL_DIMS.width; x++) {
       for (let z = 0; z < WELL_DIMS.depth; z++) {
         grid[x][WELL_DIMS.height - 1][z] = null;
@@ -451,6 +480,7 @@ function checkAndClearLayers() {
     }
     y--;
   }
+
   if (layersCleared > 0) {
     score += 100 * layersCleared * layersCleared;
     document.getElementById("score").innerText = score;
@@ -466,7 +496,7 @@ function onWindowResize() {
 function worldToGrid(worldPos) {
   return [
     Math.round(worldPos.x + (WELL_DIMS.width / 2 - 0.5)),
-    Math.round(worldPos.y - 0.5),
+    Math.round(worldPos.y - 0.2),
     Math.round(worldPos.z + (WELL_DIMS.depth / 2 - 0.5)),
   ];
 }
@@ -532,7 +562,7 @@ function animate() {
       if (lockDelayTimer === 0) lockDelayTimer = 0.001;
     } else {
       if (isFastDropping) {
-        score++; // Small bonus for fast dropping
+        score++;
         document.getElementById("score").innerText = score;
       }
       isTouchingFloor = false;
