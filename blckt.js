@@ -152,9 +152,56 @@ function init() {
   renderer.domElement.addEventListener("touchstart", onTouchStart, { passive: false });
   renderer.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
   renderer.domElement.addEventListener("touchend", onTouchEnd, { passive: false });
+  
+  // Add click listener for restarting the game
+  document.getElementById("game-over").addEventListener("click", restartGame);
+
   spawnPiece();
   animate();
 }
+
+function restartGame() {
+    // Hide the game over message
+    document.getElementById("game-over").style.display = "none";
+
+    // Reset game state variables
+    gameOver = false;
+    score = 0;
+    lastTick = 0;
+    lockDelayTimer = 0;
+    isTouchingFloor = false;
+    
+    // Update the score display
+    document.getElementById("score").innerText = score;
+
+    // Clear the visual scene
+    if (activePiece) scene.remove(activePiece);
+    if (ghostPiece) scene.remove(ghostPiece);
+    
+    // Dispose of geometries and materials to free up memory
+    while(staticMeshes.children.length > 0){ 
+        let child = staticMeshes.children[0];
+        staticMeshes.remove(child);
+        if(child.geometry) child.geometry.dispose();
+        if(child.material) child.material.dispose();
+        if(child.children.length > 0) {
+            let innerChild = child.children[0];
+            if(innerChild.geometry) innerChild.geometry.dispose();
+            if(innerChild.material) innerChild.material.dispose();
+        }
+    }
+    
+    wallHighlights.clear();
+
+    // Reset the internal grid representation
+    grid = Array.from({ length: WELL_DIMS.width }, () =>
+        Array.from({ length: WELL_DIMS.height }, () => Array(WELL_DIMS.depth).fill(null))
+    );
+    
+    // Start the game again
+    spawnPiece();
+}
+
 
 function createWireframeWell() {
   const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
@@ -485,7 +532,11 @@ function handleKeyUp(event) {
 }
 
 function handleKeyDown(event) {
-  if (!activePiece || gameOver || event.repeat) return;
+  if (gameOver) {
+    if (event.key === 'Enter' || event.code === 'Space') restartGame();
+    return;
+  }
+  if (!activePiece || event.repeat) return;
   if (event.key.toLowerCase() === 'a') {
     keyRotateMode = true;
     return;
@@ -536,7 +587,10 @@ const TOUCH_SETTINGS = {
 
 function onTouchStart(event) {
   event.preventDefault();
-  if (gameOver) return;
+  if (gameOver) {
+      restartGame();
+      return;
+  }
 
   const now = clock.getElapsedTime() * 1000;
 
