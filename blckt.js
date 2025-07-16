@@ -5,6 +5,7 @@ const WELL_DIMS = { width: 5, depth: 5, height: 12 };
 const TICK_RATE_MS = 1000;
 const LOCK_DELAY_MS = 500;
 const FAST_FALL_TICK_RATE_MS = 100;
+const HOLD_DELAY_MS = 200;
 
 const CAMERA_CONFIG = {
   pos: new THREE.Vector3(0, WELL_DIMS.height * 1.4, 0),
@@ -197,24 +198,15 @@ function init() {
 }
 
 function restartGame() {
-  // Hide the game over message
   document.getElementById("game-over").style.display = "none";
-
-  // Reset game state variables
   gameOver = false;
   score = 0;
   lastTick = 0;
   lockDelayTimer = 0;
   isTouchingFloor = false;
-
-  // Update the score display
   document.getElementById("score").innerText = score;
-
-  // Clear the visual scene
   if (activePiece) scene.remove(activePiece);
   if (ghostPiece) scene.remove(ghostPiece);
-
-  // Dispose of geometries and materials to free up memory
   while (staticMeshes.children.length > 0) {
     let child = staticMeshes.children[0];
     staticMeshes.remove(child);
@@ -226,17 +218,12 @@ function restartGame() {
       if (innerChild.material) innerChild.material.dispose();
     }
   }
-
   wallHighlights.clear();
-
-  // Reset the internal grid representation
   grid = Array.from({ length: WELL_DIMS.width }, () =>
     Array.from({ length: WELL_DIMS.height }, () =>
       Array(WELL_DIMS.depth).fill(null),
     ),
   );
-
-  // Start the game again
   spawnPiece();
 }
 
@@ -629,6 +616,9 @@ function handleKeyUp(event) {
   if (key.toLowerCase() === "a" || key === "Shift") {
     keyRotateMode = false;
   }
+  if (event.code === "Space") {
+    isFastDropping = false;
+  }
 }
 
 function handleKeyDown(event) {
@@ -650,13 +640,12 @@ function handleKeyDown(event) {
   }
   if (event.code === "Space") {
     event.preventDefault();
-    hardDrop();
+    isFastDropping = true;
     return;
   }
 
   const key = event.key.toLowerCase();
   switch (key) {
-    // Your existing Colemak controls
     case "n":
       if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
       else movePiece(-1, 0, 0);
@@ -673,11 +662,10 @@ function handleKeyDown(event) {
       if (keyRotateMode) rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
       else movePiece(0, 0, 1);
       break;
-
-    case "r": // X-axis rotate
+    case "r":
       rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
       break;
-    case "z": // Y-axis rotate
+    case "z":
       rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
       break;
   }
@@ -751,7 +739,6 @@ function onTouchStart(event) {
       };
       touchState.isRotateMode = true;
     } else if (!isLeftHalf && !touchState.left && !touchState.right) {
-      // Logic for single-finger hold on right side
       touchState.right = { id: touch.identifier };
       touchState.holdTimeout = setTimeout(() => {
         isFastDropping = true;
@@ -791,7 +778,7 @@ function onTouchMove(event) {
       const deltaX = touch.clientX - touchState.left.lastX;
       const deltaY = touch.clientY - touchState.left.lastY;
       if (Math.abs(deltaX) > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) {
-        movePiece(Math.sign(deltaX), 0, 0); // X-axis movement
+        movePiece(Math.sign(deltaX), 0, 0);
         touchState.left.lastX = touch.clientX;
         touchState.left.lastY = touch.clientY;
       } else if (Math.abs(deltaY) > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) {
@@ -807,6 +794,9 @@ function onTouchEnd(event) {
   event.preventDefault();
   if (gameOver) return;
 
+  clearTimeout(touchState.holdTimeout);
+  isFastDropping = false;
+
   const now = clock.getElapsedTime() * 1000;
 
   for (const touch of event.changedTouches) {
@@ -818,8 +808,7 @@ function onTouchEnd(event) {
         verticalTraveled > TOUCH_SETTINGS.SWIPE_MIN_DIST_PX &&
         verticalTraveled > Math.abs(touch.clientX - touchState.left.startX)
       ) {
-        // Leaving it here because it might be useful for another thing.
-        //hardDrop();
+        // hardDrop();
       }
       touchState.left = null;
       touchState.right = null;
