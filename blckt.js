@@ -4,6 +4,8 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.m
 const WELL_DIMS = { width: 5, depth: 5, height: 12 };
 const TICK_RATE_MS = 1000;
 const LOCK_DELAY_MS = 500;
+const FAST_FALL_TICK_RATE_MS = 100;
+
 const CAMERA_CONFIG = {
   pos: new THREE.Vector3(0, WELL_DIMS.height * 1.4, 0),
   lookAt: new THREE.Vector3(0, -WELL_DIMS.height * 0.05, 0),
@@ -21,9 +23,11 @@ let score = 0,
   lockDelayTimer = 0;
 let isTouchingFloor = false,
   gameOver = false;
+let isFastDropping = false;
 let isAnimating = false;
 let keyRotateMode = false;
 let gameHasStarted = false;
+let isPaused = false;
 
 // --- Piece Definitions & Materials ---
 const PIECES = [
@@ -129,6 +133,13 @@ LAYER_COLORS.forEach((color) => {
 const baseBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
 const ghostWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xb58900 });
 
+function togglePause() {
+  if (gameOver || !gameHasStarted) return;
+  isPaused = !isPaused;
+  const pauseMenu = document.getElementById("pause-menu");
+  pauseMenu.style.display = isPaused ? "block" : "none";
+}
+
 function init() {
   scene = new THREE.Scene();
   clock = new THREE.Clock();
@@ -148,7 +159,7 @@ function init() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
-  renderer.setClearColor(0x333333);
+  renderer.setClearColor(0x000000);
   scene.add(new THREE.AmbientLight(0x93a1a1));
   dirLight = new THREE.DirectionalLight(0xfdf6e3, 0.8);
   dirLight.position.set(WELL_DIMS.width, WELL_DIMS.height, WELL_DIMS.depth);
@@ -179,6 +190,9 @@ function init() {
     .getElementById("start-message")
     .addEventListener("click", startGame, { once: true });
   document.getElementById("game-over").addEventListener("click", restartGame);
+  document
+    .getElementById("score-container")
+    .addEventListener("click", togglePause);
   animate();
 }
 
@@ -498,6 +512,10 @@ function checkCollision(piece) {
 }
 
 function animate() {
+  if (isPaused) {
+    requestAnimationFrame(animate);
+    return;
+  }
   TWEEN.update();
   requestAnimationFrame(animate);
   if (!gameHasStarted) {
@@ -511,9 +529,14 @@ function animate() {
   }
   lastTick += delta;
   if (isTouchingFloor) lockDelayTimer += delta;
+
+  const currentTickRate = isFastDropping
+    ? FAST_FALL_TICK_RATE_MS
+    : TICK_RATE_MS;
+
   if (lockDelayTimer > LOCK_DELAY_MS / 1000) {
     lockPiece();
-  } else if (lastTick > TICK_RATE_MS / 1000) {
+  } else if (lastTick > currentTickRate / 1000) {
     lastTick = 0;
     activePiece.position.y--;
     if (checkCollision(activePiece)) {
@@ -521,6 +544,10 @@ function animate() {
       isTouchingFloor = true;
       if (lockDelayTimer === 0) lockDelayTimer = 0.001;
     } else {
+      if (isFastDropping) {
+        score++; // Small bonus for fast dropping
+        document.getElementById("score").innerText = score;
+      }
       isTouchingFloor = false;
       lockDelayTimer = 0;
     }
@@ -598,18 +625,26 @@ function hardDrop() {
 }
 
 function handleKeyUp(event) {
-  if (event.key.toLowerCase() === "a") {
+  const key = event.key;
+  if (key.toLowerCase() === "a" || key === "Shift") {
     keyRotateMode = false;
   }
 }
 
 function handleKeyDown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    togglePause();
+    return;
+  }
+  if (isPaused) return;
   if (gameOver) {
     if (event.key === "Enter" || event.code === "Space") restartGame();
     return;
   }
   if (!activePiece || event.repeat) return;
-  if (event.key.toLowerCase() === "a") {
+
+  if (event.key === "a" || event.key === "Shift") {
     keyRotateMode = true;
     return;
   }
@@ -618,17 +653,16 @@ function handleKeyDown(event) {
     hardDrop();
     return;
   }
-  if (event.key.toLowerCase() === "r") {
-    rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-    return;
-  }
-  switch (event.key.toLowerCase()) {
+
+  const key = event.key.toLowerCase();
+  switch (key) {
+    // Your existing Colemak controls
     case "n":
-      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
       else movePiece(-1, 0, 0);
       break;
     case "o":
-      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 0, 1), Math.PI / 2);
       else movePiece(1, 0, 0);
       break;
     case "i":
@@ -639,6 +673,32 @@ function handleKeyDown(event) {
       if (keyRotateMode) rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
       else movePiece(0, 0, 1);
       break;
+
+    case "r": // X-axis rotate
+      rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+      break;
+    case "z": // Y-axis rotate
+      rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+      break;
+  }
+
+  switch (event.key) {
+    case "ArrowLeft":
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
+      else movePiece(-1, 0, 0);
+      break;
+    case "ArrowRight":
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+      else movePiece(1, 0, 0);
+      break;
+    case "ArrowUp":
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+      else movePiece(0, 0, -1);
+      break;
+    case "ArrowDown":
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      else movePiece(0, 0, 1);
+      break;
   }
 }
 
@@ -646,6 +706,7 @@ const touchState = {
   left: null,
   right: null,
   isRotateMode: false,
+  holdTimeout: null,
 };
 
 const TOUCH_SETTINGS = {
@@ -658,6 +719,7 @@ const TOUCH_SETTINGS = {
 };
 
 function onTouchStart(event) {
+  if (isPaused) return;
   event.preventDefault();
   if (gameOver) {
     restartGame();
@@ -688,6 +750,13 @@ function onTouchStart(event) {
         startTime: now,
       };
       touchState.isRotateMode = true;
+    } else if (!isLeftHalf && !touchState.left && !touchState.right) {
+      // Logic for single-finger hold on right side
+      touchState.right = { id: touch.identifier };
+      touchState.holdTimeout = setTimeout(() => {
+        isFastDropping = true;
+        touchState.holdTimeout = null;
+      }, HOLD_DELAY_MS);
     }
   }
 }
@@ -702,14 +771,14 @@ function onTouchMove(event) {
       const deltaY = touch.clientY - touchState.right.lastY;
       if (Math.abs(deltaX) > TOUCH_SETTINGS.ROTATE_THRESHOLD_PX) {
         rotatePiece(
-          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(0, 0, 1),
           (Math.PI / 2) * Math.sign(deltaX),
         );
         touchState.right.lastX = touch.clientX;
         touchState.right.lastY = touch.clientY;
       } else if (Math.abs(deltaY) > TOUCH_SETTINGS.ROTATE_THRESHOLD_PX) {
         rotatePiece(
-          new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(1, 0, 0),
           (Math.PI / 2) * -Math.sign(deltaY),
         );
         touchState.right.lastY = touch.clientY;
@@ -725,9 +794,8 @@ function onTouchMove(event) {
         movePiece(Math.sign(deltaX), 0, 0); // X-axis movement
         touchState.left.lastX = touch.clientX;
         touchState.left.lastY = touch.clientY;
-      } else if (deltaY > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) {
-        // Note: only check for DOWNWARD drag
-        movePiece(0, -1, 0); // Y-axis movement (soft drop)
+      } else if (Math.abs(deltaY) > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) {
+        movePiece(0, 0, Math.sign(deltaY));
         touchState.left.lastY = touch.clientY;
         touchState.left.lastX = touch.clientX;
       }
@@ -757,16 +825,18 @@ function onTouchEnd(event) {
       touchState.right = null;
       touchState.isRotateMode = false;
     } else if (touchState.right?.id === touch.identifier) {
-      const touchDuration = now - touchState.right.startTime;
-      const distTraveled = Math.hypot(
-        touch.clientX - touchState.right.startX,
-        touch.clientY - touchState.right.startY,
-      );
-      if (
-        touchDuration < TOUCH_SETTINGS.TAP_TIMEOUT_MS &&
-        distTraveled < TOUCH_SETTINGS.TAP_MAX_DIST_PX
-      ) {
-        rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      if (touchState.isRotateMode) {
+        const touchDuration = now - touchState.right.startTime;
+        const distTraveled = Math.hypot(
+          touch.clientX - touchState.right.startX,
+          touch.clientY - touchState.right.startY,
+        );
+        if (
+          touchDuration < TOUCH_SETTINGS.TAP_TIMEOUT_MS &&
+          distTraveled < TOUCH_SETTINGS.TAP_MAX_DIST_PX
+        ) {
+          rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+        }
       }
       touchState.right = null;
       touchState.isRotateMode = false;

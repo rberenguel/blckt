@@ -6,55 +6,36 @@
     <title>BLCKT</title>
     <link rel="manifest" href="./manifest.json" />
     <script src="https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.1/dist/tween.umd.js"></script>
-    <style>
-      body {
-        margin: 0;
-        overflow: hidden;
-        background-color: #333;
-
-        /* Prevent zooming and scrolling */
-        touch-action: none;
-
-        /* Disable text selection */
-        -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        user-select: none;
-
-        /* Disable callout menu on long-press (iOS) */
-        -webkit-touch-callout: none;
-
-        /* Remove the highlight color on tap */
-        -webkit-tap-highlight-color: transparent;
-      }
-      canvas {
-        display: block;
-      }
-      #info {
-        position: absolute;
-        top: 10px;
-        width: 100%;
-        text-align: center;
-        color: #93a1a1; /* Solarized Base1 */
-        font-family: monospace;
-        font-size: 24px;
-        text-shadow: 1px 1px 2px #000;
-        z-index: 100;
-      }
-      #game-over {
-        display: none;
-        color: #dc322f;
-        cursor: pointer; /* Make it look clickable */
-      }
-    </style>
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div id="info">
       <div id="start-message">
         <p>Click to Start</p>
       </div>
-      <div>Score: <span id="score">0</span></div>
-      <div id="game-over">GAME OVER<br /><small>(click to restart)</small></div>
+      <div id="score-container">Score: <span id="score">0</span></div>
+      <div id="game-over">
+        GAME OVER<br /><small>(click/tap/<code>space</code> to restart)</small>
+      </div>
+    </div>
+    <div id="pause-menu">
+      <h2>PAUSED</h2>
+      <div class="controls-container">
+        <div class="controls-section">
+          <h3>Standard Controls</h3>
+          <p><b>Arrows:</b> Move</p>
+          <p><b>Shift + Arrows:</b> Rotate</p>
+          <p><b>Z:</b> Spin piece</p>
+          <p><b>Space:</b> Hard Drop</p>
+        </div>
+        <div class="controls-section">
+          <h3>Colemak Controls</h3>
+          <p><b>N, O, I, E:</b> Move</p>
+          <p><b>A + Keys:</b> Rotate</p>
+          <p><b>R:</b> Spin Piece</p>
+        </div>
+      </div>
+      <p><small>(ESC or click score to resume)</small></p>
     </div>
     <canvas id="bg"></canvas>
     <script type="module" src="blckt.js"></script>

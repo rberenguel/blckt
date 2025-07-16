@@ -1,0 +1,91 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #000;
+
+  /* Prevent zooming and scrolling */
+  touch-action: none;
+
+  /* Disable text selection */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+
+  /* Disable callout menu on long-press (iOS) */
+  -webkit-touch-callout: none;
+
+  /* Remove the highlight color on tap */
+  -webkit-tap-highlight-color: transparent;
+}
+canvas {
+  display: block;
+}
+#info {
+  position: absolute;
+  top: 10px;
+  width: 100%;
+  text-align: center;
+  color: #93a1a1; /* Solarized Base1 */
+  font-family: monospace;
+  font-size: 24px;
+  text-shadow: 1px 1px 2px #000;
+  z-index: 100;
+}
+#game-over {
+  display: none;
+  color: #dc322f;
+  cursor: pointer;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+#start-message {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+#pause-menu {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #93a1a1; /* Solarized Base1 */
+  background-color: rgba(4, 20, 25, 0.85);
+  padding: 1em 2em;
+  border: 1px solid #2aa198; /* Solarized Cyan */
+  border-radius: 8px;
+  text-align: center;
+  font-family: monospace;
+  font-size: 16px;
+  z-index: 200;
+  min-width: 350px;
+}
+.controls-container {
+  display: flex;
+  justify-content: space-around;
+  gap: 2em;
+  margin: 1.5em 0;
+  text-align: left;
+}
+#pause-menu h2 {
+  margin-top: 0;
+  font-size: 24px;
+  color: #cb4b16; /* Solarized Orange */
+}
+#pause-menu h3 {
+  color: #268bd2; /* Solarized Blue */
+  border-bottom: 1px solid #586e75;
+  padding-bottom: 0.25em;
+  margin-top: 0;
+}
+#pause-menu p {
+  margin: 0.5em 0;
+}
+#pause-menu small {
+  color: #839496; /* Solarized Base0 */
+}
