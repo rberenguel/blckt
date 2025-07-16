@@ -22,6 +22,7 @@ let score = 0,
 let isTouchingFloor = false,
   gameOver = false;
 let isAnimating = false;
+let keyRotateMode = false;
 
 // --- Piece Definitions & Materials ---
 const PIECES = [
@@ -107,17 +108,9 @@ const PIECES = [
   }, // Base0
 ];
 
-// Colors for committed layers, using the Solarized palette from PIECES
 const LAYER_COLORS = PIECES.map((p) => p.color);
-
-// Material for the active (falling) piece wireframe
-const activeWireframeMaterial = new THREE.LineBasicMaterial({
-  color: 0xfdf6e3,
-}); // Solarized Base3 (White)
-const committedWireframeMaterial = new THREE.LineBasicMaterial({
-  color: 0x000000,
-});
-// Material cache for the wall highlights
+const activeWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xfdf6e3 });
+const committedWireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
 const highlightMaterials = {};
 LAYER_COLORS.forEach((color) => {
   highlightMaterials[color.toString(16).padStart(6, "0")] =
@@ -128,7 +121,6 @@ LAYER_COLORS.forEach((color) => {
       side: THREE.DoubleSide,
     });
 });
-
 const baseBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
 const ghostWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xb58900 });
 
@@ -136,71 +128,44 @@ function init() {
   scene = new THREE.Scene();
   clock = new THREE.Clock();
   scene.add(staticMeshes, wallHighlights);
-
-  // Replace your camera creation line with this
-  camera = new THREE.PerspectiveCamera(
-    50,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000,
-  );
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.copy(CAMERA_CONFIG.pos);
   camera.lookAt(CAMERA_CONFIG.lookAt);
-
-  renderer = new THREE.WebGLRenderer({
-    canvas: document.querySelector("#bg"),
-    antialias: true,
-  });
+  renderer = new THREE.WebGLRenderer({ canvas: document.querySelector("#bg"), antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.setClearColor(0x333333);
-
   scene.add(new THREE.AmbientLight(0x93a1a1));
   dirLight = new THREE.DirectionalLight(0xfdf6e3, 0.8);
   dirLight.position.set(WELL_DIMS.width, WELL_DIMS.height, WELL_DIMS.depth);
   dirLight.castShadow = true;
   dirLight.shadow.bias = -0.001;
   scene.add(dirLight);
-
   grid = Array.from({ length: WELL_DIMS.width }, () =>
-    Array.from({ length: WELL_DIMS.height }, () =>
-      Array(WELL_DIMS.depth).fill(null),
-    ),
+    Array.from({ length: WELL_DIMS.height }, () => Array(WELL_DIMS.depth).fill(null)),
   );
-
   createWireframeWell();
-
   window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("keyup", handleKeyUp);
   window.addEventListener("resize", onWindowResize);
-  renderer.domElement.addEventListener("touchstart", onTouchStart, {
-    passive: false,
-  });
-  renderer.domElement.addEventListener("touchmove", onTouchMove, {
-    passive: false,
-  });
-  renderer.domElement.addEventListener("touchend", onTouchEnd);
-
+  renderer.domElement.addEventListener("touchstart", onTouchStart, { passive: false });
+  renderer.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
+  renderer.domElement.addEventListener("touchend", onTouchEnd, { passive: false });
   spawnPiece();
   animate();
 }
 
 function createWireframeWell() {
-  const w = WELL_DIMS.width,
-    h = WELL_DIMS.height,
-    d = WELL_DIMS.depth;
-  const hw = w / 2,
-    hd = d / 2;
+  const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
+  const hw = w / 2, hd = d / 2;
   const points = [];
-
-  // Horizontal lines
   for (let y = 0; y <= h; y++) {
     points.push(-hw, y - 0.5, -hd, hw, y - 0.5, -hd);
     points.push(-hw, y - 0.5, hd, hw, y - 0.5, hd);
     points.push(-hw, y - 0.5, -hd, -hw, y - 0.5, hd);
     points.push(hw, y - 0.5, -hd, hw, y - 0.5, hd);
   }
-  // Vertical lines
   for (let x = -hw; x <= hw; x++) {
     points.push(x, -0.5, -hd, x, h - 0.5, -hd);
     points.push(x, -0.5, hd, x, h - 0.5, hd);
@@ -209,33 +174,22 @@ function createWireframeWell() {
     points.push(-hw, -0.5, z, -hw, h - 0.5, z);
     points.push(hw, -0.5, z, hw, h - 0.5, z);
   }
-
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(points, 3),
-  );
-  const material = new THREE.LineBasicMaterial({ color: 0x2aa198 }); // Solarized Cyan
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  const material = new THREE.LineBasicMaterial({ color: 0x2aa198 });
   const wireframe = new THREE.LineSegments(geometry, material);
   scene.add(wireframe);
 }
 
 function updateWallHighlights() {
   wallHighlights.clear();
-  const w = WELL_DIMS.width,
-    h = WELL_DIMS.height,
-    d = WELL_DIMS.depth;
-  const hw = w / 2,
-    hh = h / 2,
-    hd = d / 2;
+  const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
+  const hw = w / 2, hd = d / 2;
   const planeGeom = new THREE.PlaneGeometry(1, 1);
-
   const addHighlight = (x, y, z, color, wall) => {
     const material = highlightMaterials[color.getHexString()];
-    if (!material) return; // Failsafe if color not found
-
+    if (!material) return;
     const plane = new THREE.Mesh(planeGeom, material);
-    // Adjust position based on wall
     switch (wall) {
       case "left":
         plane.position.set(-hw - 0.01, y, z - hd + 0.5);
@@ -251,34 +205,27 @@ function updateWallHighlights() {
     }
     wallHighlights.add(plane);
   };
-
   for (let y = 0; y < h; y++) {
-    // Left Wall
     for (let z = 0; z < d; z++) {
       for (let x = 0; x < w; x++) {
-        const group = grid[x][y][z];
-        if (group) {
-          addHighlight(x, y, z, group.children[0].material.color, "left");
+        if (grid[x][y][z]) {
+          addHighlight(x, y, z, grid[x][y][z].children[0].material.color, "left");
           break;
         }
       }
     }
-    // Right Wall
     for (let z = 0; z < d; z++) {
       for (let x = w - 1; x >= 0; x--) {
-        const group = grid[x][y][z];
-        if (group) {
-          addHighlight(x, y, z, group.children[0].material.color, "right");
+        if (grid[x][y][z]) {
+          addHighlight(x, y, z, grid[x][y][z].children[0].material.color, "right");
           break;
         }
       }
     }
-    // Back Wall
     for (let x = 0; x < w; x++) {
       for (let z = 0; z < d; z++) {
-        const group = grid[x][y][z];
-        if (group) {
-          addHighlight(x, y, z, group.children[0].material.color, "back");
+        if (grid[x][y][z]) {
+          addHighlight(x, y, z, grid[x][y][z].children[0].material.color, "back");
           break;
         }
       }
@@ -286,58 +233,39 @@ function updateWallHighlights() {
   }
 }
 
-// Replace your spawnPiece function with this
 function spawnPiece() {
   if (gameOver) return;
   const pieceIndex = Math.floor(Math.random() * PIECES.length);
   activePiece = new THREE.Group();
   ghostPiece = new THREE.Group();
-
   const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
-
   for (const pos of PIECES[pieceIndex].shape) {
     const wireframe = new THREE.LineSegments(edgeGeom, activeWireframeMaterial);
     wireframe.position.set(...pos);
     activePiece.add(wireframe);
-
-    const ghostWireframeCube = new THREE.LineSegments(
-      edgeGeom,
-      ghostWireframeMaterial,
-    );
+    const ghostWireframeCube = new THREE.LineSegments(edgeGeom, ghostWireframeMaterial);
     ghostWireframeCube.position.set(...pos);
     ghostWireframeCube.scale.set(0.99, 0.99, 0.99);
     ghostPiece.add(ghostWireframeCube);
   }
-
-  // --- THIS IS THE FIX ---
-  // Calculate spawn position based on grid alignment, not world center, to prevent out-of-bounds errors.
   const spawnGridX = Math.floor(WELL_DIMS.width / 2) - 1;
   const spawnX = spawnGridX - (WELL_DIMS.width / 2 - 0.5);
-
   const spawnGridZ = Math.floor(WELL_DIMS.depth / 2);
   const spawnZ = spawnGridZ - (WELL_DIMS.depth / 2 - 0.5);
-
   activePiece.position.set(spawnX, WELL_DIMS.height - 3, spawnZ);
-  // ----------------------
-
   scene.add(activePiece, ghostPiece);
-  // Animate the piece in
   if (checkCollision(activePiece)) {
     gameOver = true;
     document.getElementById("game-over").style.display = "block";
     scene.remove(activePiece, ghostPiece);
   } else {
     updateGhostPiece();
-
     isAnimating = true;
     activePiece.scale.set(0.1, 0.1, 0.1);
-
     new TWEEN.Tween(activePiece.scale)
       .to({ x: 0.99, y: 0.99, z: 0.99 }, 300)
       .easing(TWEEN.Easing.Back.Out)
-      .onComplete(() => {
-        isAnimating = false;
-      })
+      .onComplete(() => { isAnimating = false; })
       .start();
   }
 }
@@ -345,43 +273,24 @@ function spawnPiece() {
 function lockPiece() {
   const tempVec = new THREE.Vector3();
   const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
-
-  // Iterate through the wireframe segments of the active piece
   activePiece.children.forEach((wireframeCube) => {
     wireframeCube.getWorldPosition(tempVec);
     const [gx, gy, gz] = worldToGrid(tempVec);
-
     if (grid[gx]?.[gy] !== undefined && gy >= 0) {
-      // Determine color based on the Y-level (layer)
       const layerColor = LAYER_COLORS[gy % LAYER_COLORS.length];
-      const staticMaterial = new THREE.MeshStandardMaterial({
-        color: layerColor,
-      });
-
-      // Create the solid cube and its black wireframe
+      const staticMaterial = new THREE.MeshStandardMaterial({ color: layerColor });
       const staticCube = new THREE.Mesh(baseBoxGeometry, staticMaterial);
       staticCube.castShadow = true;
-      const staticWireframe = new THREE.LineSegments(
-        edgeGeom,
-        committedWireframeMaterial,
-      );
-
-      // --- THIS IS THE FIX ---
-      // Scale the wireframe slightly larger to sit outside the cube
+      const staticWireframe = new THREE.LineSegments(edgeGeom, committedWireframeMaterial);
       staticWireframe.scale.set(1.01, 1.01, 1.01);
-
-      // Group the cube and its wireframe together
       const cubeletGroup = new THREE.Group();
       cubeletGroup.add(staticCube);
       cubeletGroup.add(staticWireframe);
       cubeletGroup.position.copy(tempVec);
-
-      // Add the group to the grid and the scene
       grid[gx][gy][gz] = cubeletGroup;
       staticMeshes.add(cubeletGroup);
     }
   });
-
   scene.remove(activePiece, ghostPiece);
   activePiece = ghostPiece = null;
   checkAndClearLayers();
@@ -405,46 +314,34 @@ function checkAndClearLayers() {
       if (!isFull) break;
     }
     if (!isFull) continue;
-
     layersCleared++;
-    // Clear the full layer
     for (let x = 0; x < WELL_DIMS.width; x++) {
       for (let z = 0; z < WELL_DIMS.depth; z++) {
         const cubeletGroup = grid[x][y][z];
         if (!cubeletGroup) continue;
-
         cubeletGroup.children.forEach((child) => {
           if (child.geometry) child.geometry.dispose();
           if (child.material) child.material.dispose();
         });
-
         staticMeshes.remove(cubeletGroup);
         grid[x][y][z] = null;
       }
     }
-
-    // Shift all layers above down
     for (let yi = y; yi < WELL_DIMS.height - 1; yi++) {
       for (let x = 0; x < WELL_DIMS.width; x++) {
         for (let z = 0; z < WELL_DIMS.depth; z++) {
           const groupToMove = grid[x][yi + 1][z];
           grid[x][yi][z] = groupToMove;
-          if (groupToMove) {
-            groupToMove.position.y--;
-          }
+          if (groupToMove) groupToMove.position.y--;
         }
       }
     }
-
-    // --- THIS IS THE FIX ---
-    // Explicitly clear the top-most layer in the grid
     for (let x = 0; x < WELL_DIMS.width; x++) {
       for (let z = 0; z < WELL_DIMS.depth; z++) {
         grid[x][WELL_DIMS.height - 1][z] = null;
       }
     }
-
-    y--; // Re-check the current layer index since we shifted everything down
+    y--;
   }
   if (layersCleared > 0) {
     score += 100 * layersCleared * layersCleared;
@@ -480,14 +377,10 @@ function checkCollision(piece) {
     cube.getWorldPosition(tempVec);
     const [gx, gy, gz] = worldToGrid(tempVec);
     if (
-      gy < 0 ||
-      gy >= WELL_DIMS.height ||
-      gx < 0 ||
-      gx >= WELL_DIMS.width ||
-      gz < 0 ||
-      gz >= WELL_DIMS.depth
-    )
-      return true;
+      gy < 0 || gy >= WELL_DIMS.height ||
+      gx < 0 || gx >= WELL_DIMS.width ||
+      gz < 0 || gz >= WELL_DIMS.depth
+    ) return true;
     if (grid[gx]?.[gy]?.[gz]) return true;
   }
   return false;
@@ -503,7 +396,6 @@ function animate() {
   }
   lastTick += delta;
   if (isTouchingFloor) lockDelayTimer += delta;
-
   if (lockDelayTimer > LOCK_DELAY_MS / 1000) {
     lockPiece();
   } else if (lastTick > TICK_RATE_MS / 1000) {
@@ -520,18 +412,6 @@ function animate() {
   }
   renderer.render(scene, camera);
 }
-// --- Touch Control Globals & Constants ---
-const TAP_THRESHOLD_MS = 200;
-const SWIPE_THRESHOLD_MS = 500;
-const DRAG_SENSITIVITY = 40; // Pixels of drag to move one grid unit
-const SWIPE_DISTANCE_THRESHOLD = 50; // Min pixels for a swipe
-let touchStartX = 0,
-  touchStartY = 0,
-  touchStartTime = 0;
-let cumulativeDragY = 0;
-let isDragging = false;
-
-// --- Refactored Action Handlers (for both Keyboard and Touch) ---
 
 function movePiece(x, y, z) {
   if (!activePiece || gameOver || isAnimating) return false;
@@ -540,7 +420,6 @@ function movePiece(x, y, z) {
     activePiece.position.sub(new THREE.Vector3(x, y, z));
     return false;
   }
-  // On successful move, reset lock delay if piece was on the floor
   if (isTouchingFloor) lockDelayTimer = 0;
   updateGhostPiece();
   return true;
@@ -548,66 +427,49 @@ function movePiece(x, y, z) {
 
 function rotatePiece(axis, angle) {
   if (!activePiece || gameOver || isAnimating) return false;
-
-  // Create a clone to calculate the final valid rotation and position
   const clone = activePiece.clone();
-  clone.position.copy(activePiece.position); // Ensure clone is at the right spot
+  clone.position.copy(activePiece.position);
   clone.rotateOnWorldAxis(axis, angle);
-
   let targetPosition = activePiece.position.clone();
   let isValidMove = false;
-
-  // Check if the new rotation is valid as-is
   if (!checkCollision(clone)) {
     isValidMove = true;
   } else {
-    // If not, try "wall kicking" the clone to find a valid spot
     const kicks = [
-      new THREE.Vector3(1, 0, 0),
-      new THREE.Vector3(-1, 0, 0),
-      new THREE.Vector3(0, 0, 1),
-      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
     ];
     for (const kick of kicks) {
       clone.position.add(kick);
       if (!checkCollision(clone)) {
         isValidMove = true;
-        targetPosition.copy(clone.position); // This is our new target
+        targetPosition.copy(clone.position);
         break;
       }
-      clone.position.sub(kick); // Revert test
+      clone.position.sub(kick);
     }
   }
-
-  // If a valid final state was found, animate to it
   if (isValidMove) {
     isAnimating = true;
-    const duration = 150; // Animation time in milliseconds
+    const duration = 150;
     const targetQuaternion = clone.quaternion;
-
     new TWEEN.Tween(activePiece.position)
       .to(targetPosition, duration)
-      .easing(TWEEN.Easing.Quadratic.Out)
-      .start();
-
+      .easing(TWEEN.Easing.Quadratic.Out).start();
     new TWEEN.Tween(activePiece.quaternion)
       .to(targetQuaternion, duration)
       .easing(TWEEN.Easing.Quadratic.Out)
-      .onUpdate(updateGhostPiece) // Keep ghost updated during animation
+      .onUpdate(updateGhostPiece)
       .onComplete(() => {
         isAnimating = false;
-        // Snap to final values for precision
         activePiece.position.copy(targetPosition);
         activePiece.quaternion.copy(targetQuaternion);
         if (isTouchingFloor) lockDelayTimer = 0;
         updateGhostPiece();
-      })
-      .start();
-
+      }).start();
     return true;
   }
-
-  return false; // The rotation was not possible
+  return false;
 }
 
 function hardDrop() {
@@ -616,129 +478,163 @@ function hardDrop() {
   lockPiece();
 }
 
-// --- REPLACEMENT for handleKeyDown ---
+function handleKeyUp(event) {
+    if (event.key.toLowerCase() === 'a') {
+        keyRotateMode = false;
+    }
+}
 
 function handleKeyDown(event) {
-  if (!activePiece || gameOver) return;
-
+  if (!activePiece || gameOver || event.repeat) return;
+  if (event.key.toLowerCase() === 'a') {
+    keyRotateMode = true;
+    return;
+  }
   if (event.code === "Space") {
     event.preventDefault();
     hardDrop();
     return;
   }
-
+  if (event.key.toLowerCase() === 'r') {
+      rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      return;
+  }
   switch (event.key.toLowerCase()) {
     case "n":
-      movePiece(-1, 0, 0);
-      break; // Left
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+      else movePiece(0, -1, 0);
+      break;
     case "o":
-      movePiece(1, 0, 0);
-      break; // Right
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+      else movePiece(0, 1, 0);
+      break;
     case "i":
-      movePiece(0, 0, -1);
-      break; // Forward
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+      else movePiece(0, 0, -1);
+      break;
     case "e":
-      movePiece(0, 0, 1);
-      break; // Back
-    case "s":
-      rotatePiece(new THREE.Vector3(0, 0, 1), Math.PI / 2);
-      break; // Z-axis
-    case "r":
-      rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-      break; // Y-axis
-    case "a":
-      rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-      break; // X-axis
+      if (keyRotateMode) rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      else movePiece(0, 0, 1);
+      break;
   }
 }
 
-// --- NEW Touch Handlers ---
+const touchState = {
+  left: null,
+  right: null,
+  isRotateMode: false,
+};
+
+const TOUCH_SETTINGS = {
+  MOVE_THRESHOLD_PX: 30,
+  ROTATE_THRESHOLD_PX: 40,
+  TAP_MAX_DIST_PX: 25,
+  TAP_TIMEOUT_MS: 200,
+  SWIPE_MIN_DIST_PX: 60,
+  SWIPE_TIMEOUT_MS: 400,
+};
 
 function onTouchStart(event) {
   event.preventDefault();
-  if (!activePiece || gameOver || isAnimating) return;
+  if (gameOver) return;
 
-  // Z-axis rotation on two-finger tap
-  if (event.touches.length === 2) {
-    rotatePiece(new THREE.Vector3(0, 0, 1), Math.PI / 2);
-    return;
+  const now = clock.getElapsedTime() * 1000;
+
+  for (const touch of event.changedTouches) {
+    const isLeftHalf = touch.clientX < window.innerWidth / 2;
+
+    if (isLeftHalf && !touchState.left) {
+      touchState.left = {
+        id: touch.identifier,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        lastX: touch.clientX,
+        lastY: touch.clientY,
+        startTime: now,
+      };
+    } else if (!isLeftHalf && touchState.left && !touchState.right) {
+      touchState.right = {
+        id: touch.identifier,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        lastX: touch.clientX,
+        lastY: touch.clientY,
+        startTime: now,
+      };
+      touchState.isRotateMode = true;
+    }
   }
-
-  const touch = event.touches[0];
-  touchStartX = touch.clientX;
-  touchStartY = touch.clientY;
-  touchStartTime = clock.getElapsedTime();
-  cumulativeDragY = 0;
-  isDragging = true;
 }
 
 function onTouchMove(event) {
   event.preventDefault();
-  if (
-    !isDragging ||
-    !activePiece ||
-    gameOver ||
-    event.touches.length > 1 ||
-    isAnimating
-  )
-    return;
+  if (gameOver || isAnimating) return;
 
-  const touch = event.touches[0];
-  const deltaY = touch.clientY - touchStartY;
-  cumulativeDragY += deltaY;
-
-  const moveThreshold = DRAG_SENSITIVITY;
-  const isLeftSide = touchStartX < window.innerWidth / 2;
-
-  // Move piece every time drag crosses the sensitivity threshold
-  if (Math.abs(cumulativeDragY) > moveThreshold) {
-    const steps = Math.floor(cumulativeDragY / moveThreshold);
-    if (isLeftSide) {
-      // Left side drag moves on X-axis
-      movePiece(steps, 0, 0);
-    } else {
-      // Right side drag moves on Z-axis
-      movePiece(0, 0, steps);
+  for (const touch of event.changedTouches) {
+    if (touchState.isRotateMode && touchState.right?.id === touch.identifier) {
+      const deltaX = touch.clientX - touchState.right.lastX;
+      const deltaY = touch.clientY - touchState.right.lastY;
+      if (Math.abs(deltaX) > TOUCH_SETTINGS.ROTATE_THRESHOLD_PX) {
+        rotatePiece(new THREE.Vector3(0, 1, 0), (Math.PI / 2) * Math.sign(deltaX));
+        touchState.right.lastX = touch.clientX;
+        touchState.right.lastY = touch.clientY;
+      } else if (Math.abs(deltaY) > TOUCH_SETTINGS.ROTATE_THRESHOLD_PX) {
+        rotatePiece(new THREE.Vector3(0, 0, 1), (Math.PI / 2) * -Math.sign(deltaY));
+        touchState.right.lastY = touch.clientY;
+        touchState.right.lastX = touch.clientX;
+      }
+    } else if (!touchState.isRotateMode && touchState.left?.id === touch.identifier) {
+      const deltaX = touch.clientX - touchState.left.lastX;
+      const deltaY = touch.clientY - touchState.left.lastY;
+      if (Math.abs(deltaX) > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) {
+        movePiece(Math.sign(deltaX), 0, 0); // X-axis movement
+        touchState.left.lastX = touch.clientX;
+        touchState.left.lastY = touch.clientY;
+      } else if (deltaY > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) { // Note: only check for DOWNWARD drag
+        movePiece(0, -1, 0); // Y-axis movement (soft drop)
+        touchState.left.lastY = touch.clientY;
+        touchState.left.lastX = touch.clientX;
+      }
     }
-    cumulativeDragY %= moveThreshold;
   }
-  // Update touchStartY for next delta calculation to be relative
-  touchStartY = touch.clientY;
 }
 
 function onTouchEnd(event) {
-  if (!isDragging || !activePiece || gameOver) return;
-  isDragging = false;
+  event.preventDefault();
+  if (gameOver) return;
 
-  const touch = event.changedTouches[0];
-  const deltaX = touch.clientX - touchStartX;
-  const deltaY = touch.clientY - touchStartY;
-  const deltaTime = clock.getElapsedTime() - touchStartTime;
+  const now = clock.getElapsedTime() * 1000;
 
-  // 1. Check for Hard Drop (fast downward swipe)
-  if (
-    deltaTime < SWIPE_THRESHOLD_MS &&
-    deltaY > SWIPE_DISTANCE_THRESHOLD &&
-    Math.abs(deltaY) > Math.abs(deltaX)
-  ) {
-    hardDrop();
-    return;
-  }
-
-  // 2. Check for Tap (rotation)
-  if (
-    deltaTime < TAP_THRESHOLD_MS &&
-    Math.abs(deltaX) < 20 &&
-    Math.abs(deltaY) < 20
-  ) {
-    const isLeftSide = touch.clientX < window.innerWidth / 2;
-    if (isLeftSide) {
-      // Left side tap: Y-axis rotation
-      rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-    } else {
-      // Right side tap: X-axis rotation
-      rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+  for (const touch of event.changedTouches) {
+    if (touchState.left?.id === touch.identifier) {
+      const touchDuration = now - touchState.left.startTime;
+      const verticalTraveled = touch.clientY - touchState.left.startY;
+      if (
+        touchDuration < TOUCH_SETTINGS.SWIPE_TIMEOUT_MS &&
+        verticalTraveled > TOUCH_SETTINGS.SWIPE_MIN_DIST_PX &&
+        verticalTraveled > Math.abs(touch.clientX - touchState.left.startX)
+      ) {
+        hardDrop();
+      }
+      touchState.left = null;
+      touchState.right = null;
+      touchState.isRotateMode = false;
+    } else if (touchState.right?.id === touch.identifier) {
+      const touchDuration = now - touchState.right.startTime;
+      const distTraveled = Math.hypot(
+        touch.clientX - touchState.right.startX,
+        touch.clientY - touchState.right.startY
+      );
+      if (
+        touchDuration < TOUCH_SETTINGS.TAP_TIMEOUT_MS &&
+        distTraveled < TOUCH_SETTINGS.TAP_MAX_DIST_PX
+      ) {
+        rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      }
+      touchState.right = null;
+      touchState.isRotateMode = false;
     }
   }
 }
+
 init();

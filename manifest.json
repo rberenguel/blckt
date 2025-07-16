@@ -1,0 +1,22 @@
+{
+  "short_name": "BLCKT",
+  "version": "0.0.1",
+  "name": "BLCKT",
+  "description": "Blockout-like game.",
+  "icons": [
+    {
+      "src": "media/icon512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "media/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}
