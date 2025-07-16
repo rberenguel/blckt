@@ -29,6 +29,8 @@ let isAnimating = false;
 let keyRotateMode = false;
 let gameHasStarted = false;
 let isPaused = false;
+let shakeDuration = 0,
+  shakeMagnitude = 0;
 
 // --- Piece Definitions & Materials ---
 const PIECES = [
@@ -133,6 +135,11 @@ LAYER_COLORS.forEach((color) => {
 });
 const baseBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
 const ghostWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xb58900 });
+
+function triggerShake(magnitude, duration) {
+  shakeMagnitude = magnitude;
+  shakeDuration = duration;
+}
 
 function togglePause() {
   if (gameOver || !gameHasStarted) return;
@@ -374,21 +381,36 @@ function spawnPiece() {
 }
 
 function lockPiece() {
+  const lockEffectMagnitude = isFastDropping ? 0.4 : 0.2;
+  triggerShake(lockEffectMagnitude, 0.25);
+
+  const pieceCenter = new THREE.Vector3();
+  const worldPos = new THREE.Vector3();
+  activePiece.children.forEach((c) => {
+    pieceCenter.add(c.getWorldPosition(worldPos));
+  });
+  pieceCenter.divideScalar(activePiece.children.length);
+
+  const flashLight = new THREE.PointLight(0xfdf6e3, 3, 20);
+  flashLight.position.copy(pieceCenter);
+  scene.add(flashLight);
+
+  new TWEEN.Tween(flashLight)
+    .to({ intensity: 0 }, 400)
+    .easing(TWEEN.Easing.Quadratic.Out)
+    .onComplete(() => scene.remove(flashLight))
+    .start();
+
   const edgeGeom = new THREE.EdgesGeometry(baseBoxGeometry);
   const cubeletsToCreate = [];
 
-  // Step 1: First, calculate all the properties for the cubes to be created.
-  // This isolates the calculation for each cubelet, preventing bugs.
   activePiece.children.forEach((wireframeCube) => {
     const worldPos = new THREE.Vector3();
     wireframeCube.getWorldPosition(worldPos);
-    console.log(worldPos)
     const [gx, gy, gz] = worldToGrid(worldPos);
 
     if (grid[gx]?.[gy] !== undefined && gy >= 0) {
-        console.log(gy, wireframeCube)
       const color = LAYER_COLORS[gy % LAYER_COLORS.length];
-      console.log(color)
       cubeletsToCreate.push({
         position: worldPos,
         gridPos: { x: gx, y: gy, z: gz },
@@ -397,9 +419,10 @@ function lockPiece() {
     }
   });
 
-  // Step 2: Now, create all the meshes using the pre-calculated properties.
   cubeletsToCreate.forEach((data) => {
-    const staticMaterial = new THREE.MeshStandardMaterial({ color: data.color });
+    const staticMaterial = new THREE.MeshStandardMaterial({
+      color: data.color,
+    });
     const staticCube = new THREE.Mesh(baseBoxGeometry, staticMaterial);
     staticCube.castShadow = true;
 
@@ -535,40 +558,45 @@ function animate() {
   }
   TWEEN.update();
   requestAnimationFrame(animate);
-  if (!gameHasStarted) {
-    renderer.render(scene, camera);
-    return;
-  }
+
   const delta = clock.getDelta();
-  if (gameOver || !activePiece) {
-    renderer.render(scene, camera);
-    return;
-  }
-  lastTick += delta;
-  if (isTouchingFloor) lockDelayTimer += delta;
 
-  const currentTickRate = isFastDropping
-    ? FAST_FALL_TICK_RATE_MS
-    : TICK_RATE_MS;
+  if (gameHasStarted && !gameOver && activePiece) {
+    lastTick += delta;
+    if (isTouchingFloor) lockDelayTimer += delta;
 
-  if (lockDelayTimer > LOCK_DELAY_MS / 1000) {
-    lockPiece();
-  } else if (lastTick > currentTickRate / 1000) {
-    lastTick = 0;
-    activePiece.position.y--;
-    if (checkCollision(activePiece)) {
-      activePiece.position.y++;
-      isTouchingFloor = true;
-      if (lockDelayTimer === 0) lockDelayTimer = 0.001;
-    } else {
-      if (isFastDropping) {
-        score++;
-        document.getElementById("score").innerText = score;
+    const currentTickRate = isFastDropping
+      ? FAST_FALL_TICK_RATE_MS
+      : TICK_RATE_MS;
+
+    if (lockDelayTimer > LOCK_DELAY_MS / 1000) {
+      lockPiece();
+    } else if (lastTick > currentTickRate / 1000) {
+      lastTick = 0;
+      activePiece.position.y--;
+      if (checkCollision(activePiece)) {
+        activePiece.position.y++;
+        isTouchingFloor = true;
+        if (lockDelayTimer === 0) lockDelayTimer = 0.001;
+      } else {
+        if (isFastDropping) {
+          score++;
+          document.getElementById("score").innerText = score;
+        }
+        isTouchingFloor = false;
+        lockDelayTimer = 0;
       }
-      isTouchingFloor = false;
-      lockDelayTimer = 0;
     }
   }
+
+  const targetCamPos = CAMERA_CONFIG.pos.clone();
+  if (shakeDuration > 0) {
+    targetCamPos.x += (Math.random() - 0.5) * shakeMagnitude;
+    targetCamPos.z += (Math.random() - 0.5) * shakeMagnitude;
+    shakeDuration -= delta;
+  }
+  camera.position.lerp(targetCamPos, 0.2);
+
   renderer.render(scene, camera);
 }
 
