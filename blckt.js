@@ -23,6 +23,7 @@ let isTouchingFloor = false,
   gameOver = false;
 let isAnimating = false;
 let keyRotateMode = false;
+let gameHasStarted = false;
 
 // --- Piece Definitions & Materials ---
 const PIECES = [
@@ -109,8 +110,12 @@ const PIECES = [
 ];
 
 const LAYER_COLORS = PIECES.map((p) => p.color);
-const activeWireframeMaterial = new THREE.LineBasicMaterial({ color: 0xfdf6e3 });
-const committedWireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+const activeWireframeMaterial = new THREE.LineBasicMaterial({
+  color: 0xfdf6e3,
+});
+const committedWireframeMaterial = new THREE.LineBasicMaterial({
+  color: 0x000000,
+});
 const highlightMaterials = {};
 LAYER_COLORS.forEach((color) => {
   highlightMaterials[color.toString(16).padStart(6, "0")] =
@@ -128,10 +133,18 @@ function init() {
   scene = new THREE.Scene();
   clock = new THREE.Clock();
   scene.add(staticMeshes, wallHighlights);
-  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera = new THREE.PerspectiveCamera(
+    50,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000,
+  );
   camera.position.copy(CAMERA_CONFIG.pos);
   camera.lookAt(CAMERA_CONFIG.lookAt);
-  renderer = new THREE.WebGLRenderer({ canvas: document.querySelector("#bg"), antialias: true });
+  renderer = new THREE.WebGLRenderer({
+    canvas: document.querySelector("#bg"),
+    antialias: true,
+  });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
@@ -143,69 +156,82 @@ function init() {
   dirLight.shadow.bias = -0.001;
   scene.add(dirLight);
   grid = Array.from({ length: WELL_DIMS.width }, () =>
-    Array.from({ length: WELL_DIMS.height }, () => Array(WELL_DIMS.depth).fill(null)),
+    Array.from({ length: WELL_DIMS.height }, () =>
+      Array(WELL_DIMS.depth).fill(null),
+    ),
   );
   createWireframeWell();
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
   window.addEventListener("resize", onWindowResize);
-  renderer.domElement.addEventListener("touchstart", onTouchStart, { passive: false });
-  renderer.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
-  renderer.domElement.addEventListener("touchend", onTouchEnd, { passive: false });
-  
-  // Add click listener for restarting the game
-  document.getElementById("game-over").addEventListener("click", restartGame);
 
-  spawnPiece();
+  renderer.domElement.addEventListener("touchstart", onTouchStart, {
+    passive: false,
+  });
+  renderer.domElement.addEventListener("touchmove", onTouchMove, {
+    passive: false,
+  });
+  renderer.domElement.addEventListener("touchend", onTouchEnd, {
+    passive: false,
+  });
+
+  document
+    .getElementById("start-message")
+    .addEventListener("click", startGame, { once: true });
+  document.getElementById("game-over").addEventListener("click", restartGame);
   animate();
 }
 
 function restartGame() {
-    // Hide the game over message
-    document.getElementById("game-over").style.display = "none";
+  // Hide the game over message
+  document.getElementById("game-over").style.display = "none";
 
-    // Reset game state variables
-    gameOver = false;
-    score = 0;
-    lastTick = 0;
-    lockDelayTimer = 0;
-    isTouchingFloor = false;
-    
-    // Update the score display
-    document.getElementById("score").innerText = score;
+  // Reset game state variables
+  gameOver = false;
+  score = 0;
+  lastTick = 0;
+  lockDelayTimer = 0;
+  isTouchingFloor = false;
 
-    // Clear the visual scene
-    if (activePiece) scene.remove(activePiece);
-    if (ghostPiece) scene.remove(ghostPiece);
-    
-    // Dispose of geometries and materials to free up memory
-    while(staticMeshes.children.length > 0){ 
-        let child = staticMeshes.children[0];
-        staticMeshes.remove(child);
-        if(child.geometry) child.geometry.dispose();
-        if(child.material) child.material.dispose();
-        if(child.children.length > 0) {
-            let innerChild = child.children[0];
-            if(innerChild.geometry) innerChild.geometry.dispose();
-            if(innerChild.material) innerChild.material.dispose();
-        }
+  // Update the score display
+  document.getElementById("score").innerText = score;
+
+  // Clear the visual scene
+  if (activePiece) scene.remove(activePiece);
+  if (ghostPiece) scene.remove(ghostPiece);
+
+  // Dispose of geometries and materials to free up memory
+  while (staticMeshes.children.length > 0) {
+    let child = staticMeshes.children[0];
+    staticMeshes.remove(child);
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+    if (child.children.length > 0) {
+      let innerChild = child.children[0];
+      if (innerChild.geometry) innerChild.geometry.dispose();
+      if (innerChild.material) innerChild.material.dispose();
     }
-    
-    wallHighlights.clear();
+  }
 
-    // Reset the internal grid representation
-    grid = Array.from({ length: WELL_DIMS.width }, () =>
-        Array.from({ length: WELL_DIMS.height }, () => Array(WELL_DIMS.depth).fill(null))
-    );
-    
-    // Start the game again
-    spawnPiece();
+  wallHighlights.clear();
+
+  // Reset the internal grid representation
+  grid = Array.from({ length: WELL_DIMS.width }, () =>
+    Array.from({ length: WELL_DIMS.height }, () =>
+      Array(WELL_DIMS.depth).fill(null),
+    ),
+  );
+
+  // Start the game again
+  spawnPiece();
 }
 
-
 function createWireframeWell() {
-  const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
-  const hw = w / 2, hd = d / 2;
+  const w = WELL_DIMS.width,
+    h = WELL_DIMS.height,
+    d = WELL_DIMS.depth;
+  const hw = w / 2,
+    hd = d / 2;
   const points = [];
   for (let y = 0; y <= h; y++) {
     points.push(-hw, y - 0.5, -hd, hw, y - 0.5, -hd);
@@ -222,7 +248,10 @@ function createWireframeWell() {
     points.push(hw, -0.5, z, hw, h - 0.5, z);
   }
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(points, 3),
+  );
   const material = new THREE.LineBasicMaterial({ color: 0x2aa198 });
   const wireframe = new THREE.LineSegments(geometry, material);
   scene.add(wireframe);
@@ -230,8 +259,11 @@ function createWireframeWell() {
 
 function updateWallHighlights() {
   wallHighlights.clear();
-  const w = WELL_DIMS.width, h = WELL_DIMS.height, d = WELL_DIMS.depth;
-  const hw = w / 2, hd = d / 2;
+  const w = WELL_DIMS.width,
+    h = WELL_DIMS.height,
+    d = WELL_DIMS.depth;
+  const hw = w / 2,
+    hd = d / 2;
   const planeGeom = new THREE.PlaneGeometry(1, 1);
   const addHighlight = (x, y, z, color, wall) => {
     const material = highlightMaterials[color.getHexString()];
@@ -256,7 +288,13 @@ function updateWallHighlights() {
     for (let z = 0; z < d; z++) {
       for (let x = 0; x < w; x++) {
         if (grid[x][y][z]) {
-          addHighlight(x, y, z, grid[x][y][z].children[0].material.color, "left");
+          addHighlight(
+            x,
+            y,
+            z,
+            grid[x][y][z].children[0].material.color,
+            "left",
+          );
           break;
         }
       }
@@ -264,7 +302,13 @@ function updateWallHighlights() {
     for (let z = 0; z < d; z++) {
       for (let x = w - 1; x >= 0; x--) {
         if (grid[x][y][z]) {
-          addHighlight(x, y, z, grid[x][y][z].children[0].material.color, "right");
+          addHighlight(
+            x,
+            y,
+            z,
+            grid[x][y][z].children[0].material.color,
+            "right",
+          );
           break;
         }
       }
@@ -272,7 +316,13 @@ function updateWallHighlights() {
     for (let x = 0; x < w; x++) {
       for (let z = 0; z < d; z++) {
         if (grid[x][y][z]) {
-          addHighlight(x, y, z, grid[x][y][z].children[0].material.color, "back");
+          addHighlight(
+            x,
+            y,
+            z,
+            grid[x][y][z].children[0].material.color,
+            "back",
+          );
           break;
         }
       }
@@ -290,7 +340,10 @@ function spawnPiece() {
     const wireframe = new THREE.LineSegments(edgeGeom, activeWireframeMaterial);
     wireframe.position.set(...pos);
     activePiece.add(wireframe);
-    const ghostWireframeCube = new THREE.LineSegments(edgeGeom, ghostWireframeMaterial);
+    const ghostWireframeCube = new THREE.LineSegments(
+      edgeGeom,
+      ghostWireframeMaterial,
+    );
     ghostWireframeCube.position.set(...pos);
     ghostWireframeCube.scale.set(0.99, 0.99, 0.99);
     ghostPiece.add(ghostWireframeCube);
@@ -312,7 +365,9 @@ function spawnPiece() {
     new TWEEN.Tween(activePiece.scale)
       .to({ x: 0.99, y: 0.99, z: 0.99 }, 300)
       .easing(TWEEN.Easing.Back.Out)
-      .onComplete(() => { isAnimating = false; })
+      .onComplete(() => {
+        isAnimating = false;
+      })
       .start();
   }
 }
@@ -325,10 +380,15 @@ function lockPiece() {
     const [gx, gy, gz] = worldToGrid(tempVec);
     if (grid[gx]?.[gy] !== undefined && gy >= 0) {
       const layerColor = LAYER_COLORS[gy % LAYER_COLORS.length];
-      const staticMaterial = new THREE.MeshStandardMaterial({ color: layerColor });
+      const staticMaterial = new THREE.MeshStandardMaterial({
+        color: layerColor,
+      });
       const staticCube = new THREE.Mesh(baseBoxGeometry, staticMaterial);
       staticCube.castShadow = true;
-      const staticWireframe = new THREE.LineSegments(edgeGeom, committedWireframeMaterial);
+      const staticWireframe = new THREE.LineSegments(
+        edgeGeom,
+        committedWireframeMaterial,
+      );
       staticWireframe.scale.set(1.01, 1.01, 1.01);
       const cubeletGroup = new THREE.Group();
       cubeletGroup.add(staticCube);
@@ -424,10 +484,14 @@ function checkCollision(piece) {
     cube.getWorldPosition(tempVec);
     const [gx, gy, gz] = worldToGrid(tempVec);
     if (
-      gy < 0 || gy >= WELL_DIMS.height ||
-      gx < 0 || gx >= WELL_DIMS.width ||
-      gz < 0 || gz >= WELL_DIMS.depth
-    ) return true;
+      gy < 0 ||
+      gy >= WELL_DIMS.height ||
+      gx < 0 ||
+      gx >= WELL_DIMS.width ||
+      gz < 0 ||
+      gz >= WELL_DIMS.depth
+    )
+      return true;
     if (grid[gx]?.[gy]?.[gz]) return true;
   }
   return false;
@@ -436,6 +500,10 @@ function checkCollision(piece) {
 function animate() {
   TWEEN.update();
   requestAnimationFrame(animate);
+  if (!gameHasStarted) {
+    renderer.render(scene, camera);
+    return;
+  }
   const delta = clock.getDelta();
   if (gameOver || !activePiece) {
     renderer.render(scene, camera);
@@ -483,8 +551,10 @@ function rotatePiece(axis, angle) {
     isValidMove = true;
   } else {
     const kicks = [
-      new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-      new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 0, -1),
     ];
     for (const kick of kicks) {
       clone.position.add(kick);
@@ -502,7 +572,8 @@ function rotatePiece(axis, angle) {
     const targetQuaternion = clone.quaternion;
     new TWEEN.Tween(activePiece.position)
       .to(targetPosition, duration)
-      .easing(TWEEN.Easing.Quadratic.Out).start();
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .start();
     new TWEEN.Tween(activePiece.quaternion)
       .to(targetQuaternion, duration)
       .easing(TWEEN.Easing.Quadratic.Out)
@@ -513,7 +584,8 @@ function rotatePiece(axis, angle) {
         activePiece.quaternion.copy(targetQuaternion);
         if (isTouchingFloor) lockDelayTimer = 0;
         updateGhostPiece();
-      }).start();
+      })
+      .start();
     return true;
   }
   return false;
@@ -526,18 +598,18 @@ function hardDrop() {
 }
 
 function handleKeyUp(event) {
-    if (event.key.toLowerCase() === 'a') {
-        keyRotateMode = false;
-    }
+  if (event.key.toLowerCase() === "a") {
+    keyRotateMode = false;
+  }
 }
 
 function handleKeyDown(event) {
   if (gameOver) {
-    if (event.key === 'Enter' || event.code === 'Space') restartGame();
+    if (event.key === "Enter" || event.code === "Space") restartGame();
     return;
   }
   if (!activePiece || event.repeat) return;
-  if (event.key.toLowerCase() === 'a') {
+  if (event.key.toLowerCase() === "a") {
     keyRotateMode = true;
     return;
   }
@@ -546,18 +618,18 @@ function handleKeyDown(event) {
     hardDrop();
     return;
   }
-  if (event.key.toLowerCase() === 'r') {
-      rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-      return;
+  if (event.key.toLowerCase() === "r") {
+    rotatePiece(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    return;
   }
   switch (event.key.toLowerCase()) {
     case "n":
       if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
-      else movePiece(0, -1, 0);
+      else movePiece(-1, 0, 0);
       break;
     case "o":
       if (keyRotateMode) rotatePiece(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-      else movePiece(0, 1, 0);
+      else movePiece(1, 0, 0);
       break;
     case "i":
       if (keyRotateMode) rotatePiece(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
@@ -577,19 +649,19 @@ const touchState = {
 };
 
 const TOUCH_SETTINGS = {
-  MOVE_THRESHOLD_PX: 30,
-  ROTATE_THRESHOLD_PX: 40,
+  MOVE_THRESHOLD_PX: 20,
+  ROTATE_THRESHOLD_PX: 30,
   TAP_MAX_DIST_PX: 25,
   TAP_TIMEOUT_MS: 200,
-  SWIPE_MIN_DIST_PX: 60,
+  SWIPE_MIN_DIST_PX: 40,
   SWIPE_TIMEOUT_MS: 400,
 };
 
 function onTouchStart(event) {
   event.preventDefault();
   if (gameOver) {
-      restartGame();
-      return;
+    restartGame();
+    return;
   }
 
   const now = clock.getElapsedTime() * 1000;
@@ -629,22 +701,32 @@ function onTouchMove(event) {
       const deltaX = touch.clientX - touchState.right.lastX;
       const deltaY = touch.clientY - touchState.right.lastY;
       if (Math.abs(deltaX) > TOUCH_SETTINGS.ROTATE_THRESHOLD_PX) {
-        rotatePiece(new THREE.Vector3(0, 1, 0), (Math.PI / 2) * Math.sign(deltaX));
+        rotatePiece(
+          new THREE.Vector3(0, 1, 0),
+          (Math.PI / 2) * Math.sign(deltaX),
+        );
         touchState.right.lastX = touch.clientX;
         touchState.right.lastY = touch.clientY;
       } else if (Math.abs(deltaY) > TOUCH_SETTINGS.ROTATE_THRESHOLD_PX) {
-        rotatePiece(new THREE.Vector3(0, 0, 1), (Math.PI / 2) * -Math.sign(deltaY));
+        rotatePiece(
+          new THREE.Vector3(0, 0, 1),
+          (Math.PI / 2) * -Math.sign(deltaY),
+        );
         touchState.right.lastY = touch.clientY;
         touchState.right.lastX = touch.clientX;
       }
-    } else if (!touchState.isRotateMode && touchState.left?.id === touch.identifier) {
+    } else if (
+      !touchState.isRotateMode &&
+      touchState.left?.id === touch.identifier
+    ) {
       const deltaX = touch.clientX - touchState.left.lastX;
       const deltaY = touch.clientY - touchState.left.lastY;
       if (Math.abs(deltaX) > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) {
         movePiece(Math.sign(deltaX), 0, 0); // X-axis movement
         touchState.left.lastX = touch.clientX;
         touchState.left.lastY = touch.clientY;
-      } else if (deltaY > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) { // Note: only check for DOWNWARD drag
+      } else if (deltaY > TOUCH_SETTINGS.MOVE_THRESHOLD_PX) {
+        // Note: only check for DOWNWARD drag
         movePiece(0, -1, 0); // Y-axis movement (soft drop)
         touchState.left.lastY = touch.clientY;
         touchState.left.lastX = touch.clientX;
@@ -668,7 +750,8 @@ function onTouchEnd(event) {
         verticalTraveled > TOUCH_SETTINGS.SWIPE_MIN_DIST_PX &&
         verticalTraveled > Math.abs(touch.clientX - touchState.left.startX)
       ) {
-        hardDrop();
+        // Leaving it here because it might be useful for another thing.
+        //hardDrop();
       }
       touchState.left = null;
       touchState.right = null;
@@ -677,7 +760,7 @@ function onTouchEnd(event) {
       const touchDuration = now - touchState.right.startTime;
       const distTraveled = Math.hypot(
         touch.clientX - touchState.right.startX,
-        touch.clientY - touchState.right.startY
+        touch.clientY - touchState.right.startY,
       );
       if (
         touchDuration < TOUCH_SETTINGS.TAP_TIMEOUT_MS &&
@@ -689,6 +772,12 @@ function onTouchEnd(event) {
       touchState.isRotateMode = false;
     }
   }
+}
+
+function startGame() {
+  document.getElementById("start-message").style.display = "none";
+  gameHasStarted = true;
+  spawnPiece();
 }
 
 init();
