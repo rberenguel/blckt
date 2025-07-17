@@ -2,7 +2,7 @@ import * as THREE from "./libs/three.js";
 
 // --- Configuration ---
 const WELL_DIMS = { width: 5, depth: 5, height: 12 };
-const TICK_RATE_MS = 1500;
+const TICK_RATE_MS = 1000;
 const LOCK_DELAY_MS = 500;
 const FAST_FALL_TICK_RATE_MS = 100;
 const HOLD_DELAY_MS = 200;
@@ -22,8 +22,7 @@ let grid = [],
   staticMeshes = new THREE.Group(),
   wallHighlights = new THREE.Group();
 let collisionHighlights = new THREE.Group();
-let depthStrips = new THREE.Group(); // New group to hold the depth strip cubes
-
+let depthStrips = new THREE.Group(); // New group to hold the depth strip planes
 let score = 0,
   lastTick = 0,
   lockDelayTimer = 0,
@@ -40,11 +39,6 @@ let shakeDuration = 0,
 let particleSystems = [];
 let translucentCubelets = new Set();
 
-// Remove collisionFlashTimer and COLLISION_FLASH_DURATION_MS as they will be per-flash-square
-// let collisionFlashTimer = 0; // REMOVE
-// const COLLISION_FLASH_DURATION_MS = 100; // REMOVE
-
-// NEW: Duration for individual flash squares to fade out
 const FLASH_SQUARE_FADE_DURATION_MS = 300; // Adjust as needed
 
 // --- Piece Definitions & Materials ---
@@ -220,10 +214,6 @@ function triggerShake(magnitude, duration) {
   shakeDuration = duration;
 }
 
-// blckt.js
-
-// ... (existing code) ...
-
 function detectCoveredHoles() {
   const holes = [];
   const w = WELL_DIMS.width;
@@ -323,31 +313,6 @@ function togglePause() {
   pauseMenu.style.display = isPaused ? "block" : "none";
 }
 
-// REMOVE THIS FUNCTION: createTriangleMesh (not used anymore)
-/*
-function createTriangleMesh(color) {
-  const geometry = new THREE.BufferGeometry();
-  const vertices = new Float32Array([
-    0.5, 0, -0.288, // Vertex 0 (right)
-    -0.5, 0, -0.288, // Vertex 1 (left)
-    0.0, 0, 0.577, // Vertex 2 (top/front)
-  ]);
-  geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
-  geometry.computeVertexNormals();
-
-  const material = new THREE.MeshBasicMaterial({
-    color: color,
-    transparent: true,
-    opacity: 0.1,
-    side: THREE.DoubleSide,
-  });
-
-  const triangle = new THREE.Mesh(geometry, material);
-  triangle.rotation.x = Math.PI / 2;
-  return triangle;
-}
-*/
-
 function init() {
   scene = new THREE.Scene();
   clock = new THREE.Clock();
@@ -375,14 +340,14 @@ function init() {
   dirLight.shadow.bias = -0.001;
   scene.add(dirLight);
 
-  scene.add(staticMeshes, wallHighlights, collisionHighlights, depthStrips);
+  scene.add(staticMeshes, wallHighlights, collisionHighlights, depthStrips); // Add depthStrips to scene
   grid = Array.from({ length: WELL_DIMS.width }, () =>
     Array.from({ length: WELL_DIMS.height }, () =>
       Array(WELL_DIMS.depth).fill(null),
     ),
   );
   createWireframeWell();
-  createDepthStrips();
+  createDepthStrips(); // Call the new function to create the strips
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
   let resizeTimeout;
@@ -410,56 +375,6 @@ function init() {
   requestAnimationFrame(animate);
 }
 
-function createDepthStrips() {
-  depthStrips.clear(); // Clear existing strips if this is called multiple times
-
-  const w = WELL_DIMS.width;
-  const h = WELL_DIMS.height;
-  const d = WELL_DIMS.depth;
-  const hw = w / 2;
-  const hd = d / 2;
-
-  // Use PlaneGeometry for the strips
-  // The plane will be 1 unit wide (depth along Z) and 1 unit high (along Y)
-  const planeGeometry = new THREE.PlaneGeometry(1, 1); // Width, Height
-
-  // Determine strip width along Z (how many planes deep the strip is)
-  const stripDepth = d % 2 === 1 ? 1 : 2; // 1 plane deep if depth is odd, 2 if even
-
-  // Adjust starting Z position for centering the strip
-  // This calculates the world Z for the first plane of the strip based on its depth and centering
-  let startWorldZ = -hd + d / 2 - stripDepth / 2 + 0.5;
-
-  const stripMaterial = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.8,
-    side: THREE.DoubleSide,
-  }); // Important: DoubleSide for planes
-
-  for (let y = 0; y < h; y++) {
-    // Iterate through height layers
-    const color = LAYER_COLORS[y % LAYER_COLORS.length]; // Get color for this layer
-    const layerMaterial = stripMaterial.clone();
-    layerMaterial.color.set(color);
-
-    for (let i = 0; i < stripDepth; i++) {
-      const currentPlaneZ = startWorldZ + i;
-
-      // Left Strip Plane
-      const leftPlane = new THREE.Mesh(planeGeometry, layerMaterial);
-      leftPlane.position.set(-hw - 1.5, y - 1.5, currentPlaneZ); // Position outside left wall
-      leftPlane.rotation.y = Math.PI / 2; // Rotate to face along X-axis
-      depthStrips.add(leftPlane);
-
-      // Right Strip Plane
-      /*const rightPlane = new THREE.Mesh(planeGeometry, layerMaterial);
-        rightPlane.position.set(hw + 1.5, y - 1.5, currentPlaneZ); // Position outside right wall
-        rightPlane.rotation.y = -Math.PI / 2; // Rotate to face along X-axis (opposite direction)
-        depthStrips.add(rightPlane);*/
-    }
-  }
-}
-
 function restartGame() {
   document.getElementById("game-over").style.display = "none";
   gameOver = false;
@@ -482,11 +397,15 @@ function restartGame() {
     }
   }
   wallHighlights.clear();
+  collisionHighlights.clear(); // Also clear collision highlights on restart
+  depthStrips.clear(); // Clear depth strips on restart
   grid = Array.from({ length: WELL_DIMS.width }, () =>
     Array.from({ length: WELL_DIMS.height }, () =>
       Array(WELL_DIMS.depth).fill(null),
     ),
   );
+  createWireframeWell();
+  createDepthStrips(); // Recreate them on restart
   spawnPiece();
 }
 
@@ -519,6 +438,95 @@ function createWireframeWell() {
   const material = new THREE.LineBasicMaterial({ color: 0x2aa198 });
   const wireframe = new THREE.LineSegments(geometry, material);
   scene.add(wireframe);
+}
+
+// Function to create and update the depth strips using planes
+function createDepthStrips() {
+  depthStrips.clear(); // Clear existing strips if this is called multiple times
+
+  const w = WELL_DIMS.width;
+  const h = WELL_DIMS.height;
+  const d = WELL_DIMS.depth;
+  const hw = w / 2;
+  const hd = d / 2;
+
+  const planeGeometry = new THREE.PlaneGeometry(1, 1); // Width, Height
+
+  const stripDepth = d % 2 === 1 ? 1 : 2; // 1 plane deep if depth is odd, 2 if even
+
+  let startWorldZ = -hd + d / 2 - stripDepth / 2 + 0.5;
+
+  // Set initial opacity to 0.6 as requested
+  const stripMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.6, // Default lower opacity
+    side: THREE.DoubleSide,
+  });
+
+  for (let y = 0; y < h; y++) {
+    const color = LAYER_COLORS[y % LAYER_COLORS.length];
+    const layerMaterial = stripMaterial.clone();
+    layerMaterial.color.set(color);
+
+    for (let i = 0; i < stripDepth; i++) {
+      const currentPlaneZ = startWorldZ + i;
+
+      // Left Strip Plane
+      const leftPlane = new THREE.Mesh(planeGeometry, layerMaterial.clone()); // Clone material for each plane
+      leftPlane.position.set(-hw - 1.5, y - 0.5, currentPlaneZ);
+      leftPlane.rotation.y = Math.PI / 2;
+      leftPlane.userData.gridY = y; // Store the grid Y for later lookup
+      depthStrips.add(leftPlane);
+
+      // Right Strip Plane TODO: Make choosing either or none a settings option. And add settings.
+      /*const rightPlane = new THREE.Mesh(planeGeometry, layerMaterial.clone()); // Clone material for each plane
+      rightPlane.position.set(hw + 0.5, y - 0.5, currentPlaneZ);
+      rightPlane.rotation.y = -Math.PI / 2;
+      rightPlane.userData.gridY = y; // Store the grid Y for later lookup
+      depthStrips.add(rightPlane);*/
+    }
+  }
+}
+
+// Helper function to get the Y-range of a piece in grid coordinates
+function getPieceGridYRange(piece) {
+  if (!piece || piece.children.length === 0) return { minY: -1, maxY: -1 };
+  const tempVec = new THREE.Vector3();
+  let minY = Infinity;
+  let maxY = -Infinity;
+  piece.children.forEach((cube) => {
+    cube.getWorldPosition(tempVec);
+    // Adjusted to align with worldToGrid's Y rounding
+    const gridY = Math.round(tempVec.y - 0.2);
+    minY = Math.min(minY, gridY);
+    maxY = Math.max(maxY, gridY);
+  });
+  return { minY, maxY };
+}
+
+// New function to update the opacity of depth strip planes
+function updateDepthStripsOpacity() {
+  const { minY: activePieceMinY, maxY: activePieceMaxY } =
+    getPieceGridYRange(activePiece);
+
+  depthStrips.children.forEach((plane) => {
+    const planeGridY = plane.userData.gridY;
+    let targetOpacity = 0.3; // Default lower opacity
+
+    // If there's an active piece and this plane's Y is within the piece's Y range
+    if (
+      activePiece &&
+      planeGridY >= activePieceMinY &&
+      planeGridY <= activePieceMaxY
+    ) {
+      targetOpacity = 0.7; // Higher opacity
+    }
+
+    if (plane.material.opacity !== targetOpacity) {
+      plane.material.opacity = targetOpacity;
+      plane.material.needsUpdate = true;
+    }
+  });
 }
 
 function updateWallHighlights() {
@@ -624,6 +632,7 @@ function spawnPiece() {
     scene.remove(activePiece, ghostPiece);
   } else {
     updateGhostPiece();
+    updateDepthStripsOpacity(); // Update opacity when a new piece spawns
     isAnimating = true;
     activePiece.scale.set(0.1, 0.1, 0.1);
     new TWEEN.Tween(activePiece.scale)
@@ -704,6 +713,7 @@ function lockPiece() {
   updateWallHighlights();
 
   updateTranslucentCubelets();
+  updateDepthStripsOpacity(); // Update opacity after locking a piece (before spawn for new piece)
 
   spawnPiece();
   isTouchingFloor = false;
@@ -773,6 +783,7 @@ function checkAndClearLayers() {
     score += 100 * layersCleared * layersCleared;
     document.getElementById("score").innerText = score;
     updateTranslucentCubelets();
+    updateDepthStripsOpacity(); // Update opacity after clearing layers
   }
 }
 
@@ -799,15 +810,6 @@ function updateGhostPiece() {
 }
 
 function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
-  // Clear any existing flashes but store them to manage their fade-out
-  // Instead of clearing all and recreating, we iterate existing and add new
-  // This means collisionHighlights should not be cleared here if we want continuous fade
-  // Instead, the animate loop should remove flashes when their lifetime expires.
-  collisionHighlights.children.forEach((flashSquare) => {
-    flashSquare.userData.markedForRemoval = true; // Mark old flashes for cleanup
-  });
-  // New flashes will be added below
-
   const w = WELL_DIMS.width,
     h = WELL_DIMS.height,
     d = WELL_DIMS.depth;
@@ -827,8 +829,6 @@ function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
 
   // Helper to add a flash square to the scene
   const addFlashSquare = (gridX, gridY, gridZ, distance, color) => {
-    // Only create if it's not marked for removal (or is new)
-    // We'll manage existing vs new by always adding new ones, and letting animate clean up old ones
     const material = new THREE.MeshBasicMaterial({
       color: color,
       transparent: true,
@@ -910,11 +910,6 @@ function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
       }
     }
   }
-  // The global collisionFlashTimer is no longer directly used to clear the group,
-  // but it can still trigger the `animate` loop's cleanup mechanism for initial setup.
-  // Or, we remove it completely, and rely solely on per-material lifetime.
-  // Let's remove the global timer.
-  // collisionFlashTimer = COLLISION_FLASH_DURATION_MS; // REMOVE THIS LINE
 }
 
 function checkCollision(piece) {
@@ -1015,12 +1010,13 @@ function animate(currentTime) {
     const normalizedTime = timeLived / FLASH_SQUARE_FADE_DURATION_MS;
 
     if (normalizedTime >= 1.0) {
-      // Fully faded, remove it
+      // Fully faded, remove it and dispose its resources
       collisionHighlights.remove(flashSquare);
       flashSquare.material.dispose();
       flashSquare.geometry.dispose();
     } else {
       // Fade it out
+      // Linear fade from maxOpacity to 0
       flashSquare.material.opacity =
         flashSquare.userData.maxOpacity * (1.0 - normalizedTime);
       flashSquare.material.needsUpdate = true;
@@ -1053,6 +1049,7 @@ function animate(currentTime) {
         isTouchingFloor = false;
         lockDelayTimer = 0;
       }
+      updateDepthStripsOpacity();
     }
   }
 
@@ -1109,6 +1106,7 @@ function movePiece(x, y, z) {
   }
   if (isTouchingFloor) lockDelayTimer = 0;
   updateGhostPiece();
+  updateDepthStripsOpacity(); // Update opacity after a successful move
   return true;
 }
 
@@ -1160,6 +1158,7 @@ function rotatePiece(axis, angle) {
         activePiece.quaternion.copy(targetQuaternion);
         if (isTouchingFloor) lockDelayTimer = 0;
         updateGhostPiece();
+        updateDepthStripsOpacity(); // Update opacity after a successful rotation
       })
       .start();
     return true;
@@ -1407,6 +1406,7 @@ function onTouchEnd(event) {
 function startGame() {
   gameHasStarted = true;
   spawnPiece();
+  updateDepthStripsOpacity(); // Ensure strips are updated when game starts/piece spawns
 }
 
 init();
