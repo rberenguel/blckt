@@ -1,4 +1,4 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js";
+import * as THREE from "./libs/three.js";
 
 // --- Configuration ---
 const WELL_DIMS = { width: 5, depth: 5, height: 12 };
@@ -6,6 +6,8 @@ const TICK_RATE_MS = 1000;
 const LOCK_DELAY_MS = 500;
 const FAST_FALL_TICK_RATE_MS = 100;
 const HOLD_DELAY_MS = 200;
+const FPS_CAP = 30;
+const FRAME_INTERVAL = 1000 / FPS_CAP;
 
 const CAMERA_CONFIG = {
   pos: new THREE.Vector3(0, WELL_DIMS.height * 1.4, 0),
@@ -21,7 +23,8 @@ let grid = [],
   wallHighlights = new THREE.Group();
 let score = 0,
   lastTick = 0,
-  lockDelayTimer = 0;
+  lockDelayTimer = 0,
+  lastFrameTime = 0;
 let isTouchingFloor = false,
   gameOver = false;
 let isFastDropping = false;
@@ -250,7 +253,7 @@ function init() {
     .getElementById("score-container")
     .addEventListener("click", togglePause);
   document.getElementById("pause-menu").addEventListener("click", togglePause);
-  animate();
+  requestAnimationFrame(animate);
 }
 
 function restartGame() {
@@ -606,14 +609,20 @@ function checkCollision(piece) {
   return false;
 }
 
-function animate() {
-  if (isPaused) {
-    requestAnimationFrame(animate);
-    return;
-  }
-  TWEEN.update();
+function animate(currentTime) {
   requestAnimationFrame(animate);
 
+  if (isPaused) {
+    return;
+  }
+
+  const elapsed = currentTime - lastFrameTime;
+  if (elapsed < FRAME_INTERVAL) {
+    return;
+  }
+  lastFrameTime = currentTime - (elapsed % FRAME_INTERVAL);
+
+  TWEEN.update(currentTime);
   const delta = clock.getDelta();
 
   if (gameHasStarted && !gameOver && activePiece) {

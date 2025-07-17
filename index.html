@@ -5,16 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BLCKT</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Sixtyfour&display=swap"
-      rel="stylesheet"
-    />
+    <link href="./fonts/sixtyfour.css" rel="stylesheet" />
     <link rel="stylesheet" href="./fonts/inter.css" />
     <link rel="stylesheet" href="./fonts/monoid.css" />
-    <script src="https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.1/dist/tween.umd.js"></script>
+    <script src="./libs/tween.js"></script>
     <link rel="stylesheet" href="./style.css" />
+    <link rel="icon" href="./media/favicon.ico" type="image/x-icon" />
   </head>
   <body>
     <div id="info">
@@ -53,5 +49,24 @@
     </div>
     <canvas id="bg"></canvas>
     <script type="module" src="blckt.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("./sw.js").then(
+            function (registration) {
+              console.log(
+                "ServiceWorker registration successful with scope: ",
+                registration.scope,
+              );
+            },
+            function (err) {
+              console.log("ServiceWorker registration failed: ", err);
+            },
+          );
+        });
+      } else {
+        console.info("Service workers not available on this device");
+      }
+    </script>
   </body>
 </html>
