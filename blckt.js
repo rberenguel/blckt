@@ -149,6 +149,33 @@ const PIECES = [
       [0, 0, 1],
     ],
   }, // Base0
+{
+    color: 0x859900, // Solarized Green
+    shape: [
+      [0, 0, 0],   // Cube 1: Base
+      [1, 0, 0],   // Cube 2: Extends +X from Cube 1 (first segment)
+
+      [0, 1, 0],   // Cube 3: Connects to Cube 1, moves +Y (up)
+      [0, 1, 1],   // Cube 4: Connects to Cube 3, moves +Z (forward/backward depending on view)
+                   // This forms a connected "S" that bends in X, Y, and Z.
+                   // From [0,0,0] it goes right [1,0,0], and from [0,0,0] it goes up [0,1,0],
+                   // and from [0,1,0] it goes into depth [0,1,1].
+    ],
+  }, // Corrected True 3D "S" Tetromino (skew)
+
+  // Corrected 3D "Z" Tetromino (Skew):
+  // This is the mirrored version of the "S"
+  {
+    color: 0xdc322f, // Solarized Red
+    shape: [
+      [0, 0, 0],   // Cube 1: Base
+      [-1, 0, 0],  // Cube 2: Extends -X from Cube 1 (first segment)
+
+      [0, 1, 0],   // Cube 3: Connects to Cube 1, moves +Y (up)
+      [0, 1, -1],  // Cube 4: Connects to Cube 3, moves -Z (opposite depth)
+                   // Mirrored version, goes left, then up, then opposite depth
+    ],
+  }, // Corrected True 3D "Z" Tetromino (skew)
 ];
 
 const LAYER_COLORS = PIECES.map((p) => p.color);
