@@ -2,7 +2,7 @@ import * as THREE from "./libs/three.js";
 
 // --- Configuration ---
 const WELL_DIMS = { width: 5, depth: 5, height: 12 };
-const TICK_RATE_MS = 1000;
+const TICK_RATE_MS = 1500;
 const LOCK_DELAY_MS = 500;
 const FAST_FALL_TICK_RATE_MS = 100;
 const HOLD_DELAY_MS = 200;
@@ -22,6 +22,8 @@ let grid = [],
   staticMeshes = new THREE.Group(),
   wallHighlights = new THREE.Group();
 let collisionHighlights = new THREE.Group();
+let depthStrips = new THREE.Group(); // New group to hold the depth strip cubes
+
 let score = 0,
   lastTick = 0,
   lockDelayTimer = 0,
@@ -37,8 +39,14 @@ let shakeDuration = 0,
   shakeMagnitude = 0;
 let particleSystems = [];
 let translucentCubelets = new Set();
-let collisionFlashTimer = 0;
-const COLLISION_FLASH_DURATION_MS = 100; // How long the flash lasts
+
+// Remove collisionFlashTimer and COLLISION_FLASH_DURATION_MS as they will be per-flash-square
+// let collisionFlashTimer = 0; // REMOVE
+// const COLLISION_FLASH_DURATION_MS = 100; // REMOVE
+
+// NEW: Duration for individual flash squares to fade out
+const FLASH_SQUARE_FADE_DURATION_MS = 300; // Adjust as needed
+
 // --- Piece Definitions & Materials ---
 
 const translucentCommittedMaterial = new THREE.MeshStandardMaterial({
@@ -315,36 +323,30 @@ function togglePause() {
   pauseMenu.style.display = isPaused ? "block" : "none";
 }
 
+// REMOVE THIS FUNCTION: createTriangleMesh (not used anymore)
+/*
 function createTriangleMesh(color) {
   const geometry = new THREE.BufferGeometry();
-  // Vertices for a simple equilateral triangle in 2D (on XZ plane, assuming Y is up)
-  // You can adjust these to your preferred triangle shape
   const vertices = new Float32Array([
-    0.5,
-    0,
-    -0.288, // Vertex 0 (right)
-    -0.5,
-    0,
-    -0.288, // Vertex 1 (left)
-    0.0,
-    0,
-    0.577, // Vertex 2 (top/front)
+    0.5, 0, -0.288, // Vertex 0 (right)
+    -0.5, 0, -0.288, // Vertex 1 (left)
+    0.0, 0, 0.577, // Vertex 2 (top/front)
   ]);
   geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
-  geometry.computeVertexNormals(); // Needed for proper lighting (if you add any to particles)
+  geometry.computeVertexNormals();
 
   const material = new THREE.MeshBasicMaterial({
-    // Use MeshBasicMaterial as they are just decorative
     color: color,
     transparent: true,
-    opacity: 0.1, // Still faint
-    side: THREE.DoubleSide, // Important for seeing both sides of the plane
+    opacity: 0.1,
+    side: THREE.DoubleSide,
   });
 
   const triangle = new THREE.Mesh(geometry, material);
-  triangle.rotation.x = Math.PI / 2; // Orient flat triangle upwards (XZ plane)
+  triangle.rotation.x = Math.PI / 2;
   return triangle;
 }
+*/
 
 function init() {
   scene = new THREE.Scene();
@@ -373,13 +375,14 @@ function init() {
   dirLight.shadow.bias = -0.001;
   scene.add(dirLight);
 
-  scene.add(staticMeshes, wallHighlights, collisionHighlights);
+  scene.add(staticMeshes, wallHighlights, collisionHighlights, depthStrips);
   grid = Array.from({ length: WELL_DIMS.width }, () =>
     Array.from({ length: WELL_DIMS.height }, () =>
       Array(WELL_DIMS.depth).fill(null),
     ),
   );
   createWireframeWell();
+  createDepthStrips();
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
   let resizeTimeout;
@@ -405,6 +408,56 @@ function init() {
     .addEventListener("click", togglePause);
   document.getElementById("pause-menu").addEventListener("click", togglePause);
   requestAnimationFrame(animate);
+}
+
+function createDepthStrips() {
+  depthStrips.clear(); // Clear existing strips if this is called multiple times
+
+  const w = WELL_DIMS.width;
+  const h = WELL_DIMS.height;
+  const d = WELL_DIMS.depth;
+  const hw = w / 2;
+  const hd = d / 2;
+
+  // Use PlaneGeometry for the strips
+  // The plane will be 1 unit wide (depth along Z) and 1 unit high (along Y)
+  const planeGeometry = new THREE.PlaneGeometry(1, 1); // Width, Height
+
+  // Determine strip width along Z (how many planes deep the strip is)
+  const stripDepth = d % 2 === 1 ? 1 : 2; // 1 plane deep if depth is odd, 2 if even
+
+  // Adjust starting Z position for centering the strip
+  // This calculates the world Z for the first plane of the strip based on its depth and centering
+  let startWorldZ = -hd + d / 2 - stripDepth / 2 + 0.5;
+
+  const stripMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide,
+  }); // Important: DoubleSide for planes
+
+  for (let y = 0; y < h; y++) {
+    // Iterate through height layers
+    const color = LAYER_COLORS[y % LAYER_COLORS.length]; // Get color for this layer
+    const layerMaterial = stripMaterial.clone();
+    layerMaterial.color.set(color);
+
+    for (let i = 0; i < stripDepth; i++) {
+      const currentPlaneZ = startWorldZ + i;
+
+      // Left Strip Plane
+      const leftPlane = new THREE.Mesh(planeGeometry, layerMaterial);
+      leftPlane.position.set(-hw - 1.5, y - 1.5, currentPlaneZ); // Position outside left wall
+      leftPlane.rotation.y = Math.PI / 2; // Rotate to face along X-axis
+      depthStrips.add(leftPlane);
+
+      // Right Strip Plane
+      /*const rightPlane = new THREE.Mesh(planeGeometry, layerMaterial);
+        rightPlane.position.set(hw + 1.5, y - 1.5, currentPlaneZ); // Position outside right wall
+        rightPlane.rotation.y = -Math.PI / 2; // Rotate to face along X-axis (opposite direction)
+        depthStrips.add(rightPlane);*/
+    }
+  }
 }
 
 function restartGame() {
@@ -746,7 +799,15 @@ function updateGhostPiece() {
 }
 
 function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
-  collisionHighlights.clear();
+  // Clear any existing flashes but store them to manage their fade-out
+  // Instead of clearing all and recreating, we iterate existing and add new
+  // This means collisionHighlights should not be cleared here if we want continuous fade
+  // Instead, the animate loop should remove flashes when their lifetime expires.
+  collisionHighlights.children.forEach((flashSquare) => {
+    flashSquare.userData.markedForRemoval = true; // Mark old flashes for cleanup
+  });
+  // New flashes will be added below
+
   const w = WELL_DIMS.width,
     h = WELL_DIMS.height,
     d = WELL_DIMS.depth;
@@ -757,62 +818,53 @@ function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
     SOLARIZED_COLORS_FOR_FLASH[
       Math.floor(Math.random() * SOLARIZED_COLORS_FOR_FLASH.length)
     ];
-  const flashColor = new THREE.Color(0x339999);
-  flashColor.multiplyScalar(0.5); // Still darken the base color
-  const darkerFlashColor = new THREE.Color(0x003333);
-  darkerFlashColor.multiplyScalar(0.99); // Still darken the base color
+  const flashColor = new THREE.Color(baseSolarizedColor);
+  flashColor.multiplyScalar(0.5); // Main flash color
+  const darkerFlashColor = new THREE.Color(baseSolarizedColor);
+  darkerFlashColor.multiplyScalar(0.2); // Darker color for distance 1
 
   const flashSquareGeom = new THREE.PlaneGeometry(1, 1); // 1x1 square plane
 
   // Helper to add a flash square to the scene
   const addFlashSquare = (gridX, gridY, gridZ, distance, color) => {
-    let opacity;
-    if (distance === 0) {
-      opacity = 0.3; // Brighter for direct collision
-    } else if (distance === 1) {
-      opacity = 0.08; // Darker for one square away
-    } else {
-      return; // No flash for further distances
-    }
-
+    // Only create if it's not marked for removal (or is new)
+    // We'll manage existing vs new by always adding new ones, and letting animate clean up old ones
     const material = new THREE.MeshBasicMaterial({
       color: color,
       transparent: true,
-      opacity: opacity,
+      opacity: 1.0, // Start at full opacity, let animate handle the fade
       side: THREE.DoubleSide,
     });
 
     const flashPlane = new THREE.Mesh(flashSquareGeom, material);
+    flashPlane.userData.creationTime = clock.getElapsedTime() * 1000; // Store creation time in MS
+    flashPlane.userData.maxOpacity = distance === 0 ? 0.3 : 0.08; // Store initial max opacity
+
     // Position the flash plane at the center of the grid cell
     const worldX = gridX - hw + 0.5;
     const worldY = gridY - 0.5;
     const worldZ = gridZ - hd + 0.5;
 
     if (walls.includes("left") && gridX === 0) {
-      // Only flash on the leftmost face if it's the left wall
       flashPlane.position.set(-hw - 0.05, worldY, worldZ);
       flashPlane.rotation.y = Math.PI / 2;
       collisionHighlights.add(flashPlane);
     }
     if (walls.includes("right") && gridX === WELL_DIMS.width - 1) {
-      // Only flash on the rightmost face
       flashPlane.position.set(hw + 0.05, worldY, worldZ);
       flashPlane.rotation.y = -Math.PI / 2;
       collisionHighlights.add(flashPlane);
     }
     if (walls.includes("back") && gridZ === 0) {
-      // Only flash on the backmost face
       flashPlane.position.set(worldX, worldY, -hd - 0.05);
       collisionHighlights.add(flashPlane);
     }
     if (walls.includes("front") && gridZ === WELL_DIMS.depth - 1) {
-      // Only flash on the frontmost face
       flashPlane.position.set(worldX, worldY, hd + 0.05);
       flashPlane.rotation.y = Math.PI;
       collisionHighlights.add(flashPlane);
     }
     if (walls.includes("floor") && gridY === 0) {
-      // Floor flash
       const floorFlashPlane = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 1),
         material,
@@ -824,7 +876,6 @@ function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
   };
 
   // Iterate through the bounding box of the piece + 1 square buffer
-  // This allows us to check for pixels 1 unit away
   const minX = Math.max(0, pieceBBoxMin.x - 1);
   const maxX = Math.min(WELL_DIMS.width - 1, pieceBBoxMax.x + 1);
   const minY = Math.max(0, pieceBBoxMin.y - 1);
@@ -835,13 +886,10 @@ function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
   for (let gy = minY; gy <= maxY; gy++) {
     for (let gx = minX; gx <= maxX; gx++) {
       for (let gz = minZ; gz <= maxZ; gz++) {
-        // Calculate Euclidean distance to the nearest cubelet of the piece
         let minEuclideanDist = Infinity;
-        // Iterate through all cubelets in the piece's bounding box
         for (let py = pieceBBoxMin.y; py <= pieceBBoxMax.y; py++) {
           for (let px = pieceBBoxMin.x; px <= pieceBBoxMax.x; px++) {
             for (let pz = pieceBBoxMin.z; pz <= pieceBBoxMax.z; pz++) {
-              // Calculate squared Euclidean distance (faster than sqrt)
               const distSq =
                 (gx - px) * (gx - px) +
                 (gy - py) * (gy - py) +
@@ -850,22 +898,23 @@ function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
             }
           }
         }
-        const dist = Math.round(Math.sqrt(minEuclideanDist)); // Round to nearest integer for stepped effect
+        const dist = Math.round(Math.sqrt(minEuclideanDist));
 
-        // Add flash square if distance is 0 or 1
         if (dist <= 1) {
-          if (dist == 0) {
+          if (dist === 0) {
             addFlashSquare(gx, gy, gz, dist, flashColor);
-            //TODO This is a hack because opacity does not affect these materials
-          } else if (dist == 1) {
+          } else if (dist === 1) {
             addFlashSquare(gx, gy, gz, dist, darkerFlashColor);
           }
         }
       }
     }
   }
-
-  collisionFlashTimer = COLLISION_FLASH_DURATION_MS;
+  // The global collisionFlashTimer is no longer directly used to clear the group,
+  // but it can still trigger the `animate` loop's cleanup mechanism for initial setup.
+  // Or, we remove it completely, and rely solely on per-material lifetime.
+  // Let's remove the global timer.
+  // collisionFlashTimer = COLLISION_FLASH_DURATION_MS; // REMOVE THIS LINE
 }
 
 function checkCollision(piece) {
@@ -873,53 +922,44 @@ function checkCollision(piece) {
   let collidedWalls = [];
   let isColliding = false;
 
-  let minY = Infinity; // Still useful for ghost piece, but not for flash now
-  let maxY = -Infinity; // Still useful for ghost piece, but not for flash now
+  let minY = Infinity;
+  let maxY = -Infinity;
 
-  // Store grid positions of piece cubes that are actually causing the collision with a wall
   const collidingCubeGridPositions = [];
 
   for (const cube of piece.children) {
     cube.getWorldPosition(tempVec);
     const [gx, gy, gz] = worldToGrid(tempVec);
 
-    minY = Math.min(minY, gy); // Keep these for other uses like ghost piece
-    maxY = Math.max(maxY, gy); // Keep these for other uses like ghost piece
+    minY = Math.min(minY, gy);
+    maxY = Math.max(maxY, gy);
 
     let cubeCollides = false;
 
-    // Check for boundary collisions
     if (gy < 0) {
-      // Floor collision
       cubeCollides = true;
       if (!collidedWalls.includes("floor")) collidedWalls.push("floor");
     }
     if (gx < 0) {
-      // Left wall collision
       cubeCollides = true;
       if (!collidedWalls.includes("left")) collidedWalls.push("left");
     }
     if (gx >= WELL_DIMS.width) {
-      // Right wall collision
       cubeCollides = true;
       if (!collidedWalls.includes("right")) collidedWalls.push("right");
     }
     if (gz < 0) {
-      // Back wall collision
       cubeCollides = true;
       if (!collidedWalls.includes("back")) collidedWalls.push("back");
     }
     if (gz >= WELL_DIMS.depth) {
-      // Front wall collision
       cubeCollides = true;
       if (!collidedWalls.includes("front")) collidedWalls.push("front");
     }
     if (gy >= WELL_DIMS.height) {
-      // Ceiling collision (game over)
       cubeCollides = true;
     }
 
-    // Check for static block collisions (only if within bounds)
     if (
       gy >= 0 &&
       gy < WELL_DIMS.height &&
@@ -934,28 +974,10 @@ function checkCollision(piece) {
     }
 
     if (cubeCollides) {
-      isColliding = true; // Overall collision
-      // We only care about wall collisions here for the flash effect
-      // If the piece collides with a wall (and is about to be reverted),
-      // then we consider its cubes for the flash origin
-      // A simple way is to pass *all* cubes of the piece, and let flashWalls filter
-      // Or, determine if it's a *new* boundary collision that warrants a flash.
-      // For this simpler effect, let's just pass all piece cubes if a wall collision happens.
-      // If isColliding is true, all cubes are relevant for the flash
-      // This is actually simpler: just pass the piece's current position and dimensions.
+      isColliding = true;
     }
   }
-  // For this effect, we don't need individual colliding cubes.
-  // The flash will happen on the walls themselves, localized by the piece's Y-range
-  // and using its extent for the "circle" center/radius.
-  // Let's revert to passing piece's Y-range and its world-position center.
-  // The previous implementation for flashWalls was better suited for "Euclidean circle" on walls
-  // if we want it pixelated, we make many small planes.
 
-  // Re-evaluating based on "darker one square away" and "not smooth"
-  // This implies we generate a grid of small flash planes at various distances.
-
-  // Let's calculate the bounding box of the piece in grid coordinates when it's colliding
   const bboxMin = new THREE.Vector3(Infinity, Infinity, Infinity);
   const bboxMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
 
@@ -984,20 +1006,27 @@ function animate(currentTime) {
 
   TWEEN.update(currentTime);
   const delta = clock.getDelta();
+  const currentGlobalTime = clock.getElapsedTime() * 1000; // Get current time in MS
 
-  if (collisionFlashTimer > 0) {
-    collisionFlashTimer -= delta * 1000; // Decrement by ms
-    const opacity = collisionFlashTimer / COLLISION_FLASH_DURATION_MS;
-    collisionHighlights.children.forEach((mesh) => {
-      if (mesh.material.transparent) {
-        mesh.material.opacity = opacity;
-        mesh.material.needsUpdate = true;
-      }
-    });
-    if (collisionFlashTimer <= 0) {
-      collisionHighlights.clear(); // Remove highlights when timer expires
+  // --- Fade and remove individual flash squares ---
+  for (let i = collisionHighlights.children.length - 1; i >= 0; i--) {
+    const flashSquare = collisionHighlights.children[i];
+    const timeLived = currentGlobalTime - flashSquare.userData.creationTime;
+    const normalizedTime = timeLived / FLASH_SQUARE_FADE_DURATION_MS;
+
+    if (normalizedTime >= 1.0) {
+      // Fully faded, remove it
+      collisionHighlights.remove(flashSquare);
+      flashSquare.material.dispose();
+      flashSquare.geometry.dispose();
+    } else {
+      // Fade it out
+      flashSquare.material.opacity =
+        flashSquare.userData.maxOpacity * (1.0 - normalizedTime);
+      flashSquare.material.needsUpdate = true;
     }
   }
+  // --- End flash square fade ---
 
   if (gameHasStarted && !gameOver && activePiece) {
     lastTick += delta;
