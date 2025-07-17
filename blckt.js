@@ -21,6 +21,7 @@ let activePiece = null,
 let grid = [],
   staticMeshes = new THREE.Group(),
   wallHighlights = new THREE.Group();
+let collisionHighlights = new THREE.Group();
 let score = 0,
   lastTick = 0,
   lockDelayTimer = 0,
@@ -35,8 +36,36 @@ let isPaused = false;
 let shakeDuration = 0,
   shakeMagnitude = 0;
 let particleSystems = [];
-
+let translucentCubelets = new Set();
+let collisionFlashTimer = 0;
+const COLLISION_FLASH_DURATION_MS = 100; // How long the flash lasts
 // --- Piece Definitions & Materials ---
+
+const translucentCommittedMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffffff, // Color will be set per cubelet
+  transparent: true,
+  opacity: 0.5, // Adjust this value for desired translucency
+  depthWrite: false, // Prevents depth fighting issues
+});
+
+const SOLARIZED_COLORS_FOR_FLASH = [
+  0x268bd2, // Blue
+  0x2aa198, // Cyan
+  0x859900, // Green
+  0xb58900, // Yellow
+  0xcb4b16, // Orange
+  0xdc322f, // Red
+  0xd33682, // Magenta
+  0x6c71c4, // Violet
+];
+
+const translucentWireframeMaterial = new THREE.LineBasicMaterial({
+  color: 0xdc322f, // Solarized Red
+  transparent: true,
+  opacity: 0.9,
+  linewidth: 2,
+});
+
 const PIECES = [
   {
     color: 0x2aa198,
@@ -183,6 +212,95 @@ function triggerShake(magnitude, duration) {
   shakeDuration = duration;
 }
 
+// blckt.js
+
+// ... (existing code) ...
+
+function detectCoveredHoles() {
+  const holes = [];
+  const w = WELL_DIMS.width;
+  const h = WELL_DIMS.height;
+  const d = WELL_DIMS.depth;
+
+  // Iterate through each cell in the grid
+  for (let y = 0; y < h; y++) {
+    // Start from bottom layer (y=0)
+    for (let x = 0; x < w; x++) {
+      for (let z = 0; z < d; z++) {
+        // If the current cell is empty
+        if (!grid[x][y][z]) {
+          // Check if there's a block directly above it
+          let isCovered = false;
+          for (let yi = y + 1; yi < h; yi++) {
+            if (grid[x][yi][z]) {
+              isCovered = true;
+              break; // Found a block above, this is a covered hole
+            }
+          }
+          if (isCovered) {
+            holes.push({ x, y, z });
+          }
+        }
+      }
+    }
+  }
+  return holes;
+}
+
+function updateTranslucentCubelets() {
+  // 1. Reset all previously translucent cubelets to opaque
+  translucentCubelets.forEach((cubeletGroup) => {
+    const mesh = cubeletGroup.children[0]; // The actual cube mesh
+    const wireframe = cubeletGroup.children[1]; // The wireframe (LineSegments)
+
+    const originalColor = mesh.userData.originalColor;
+    if (originalColor !== undefined) {
+      mesh.material = new THREE.MeshStandardMaterial({ color: originalColor });
+      mesh.material.needsUpdate = true;
+    }
+
+    // Reset wireframe material to committedWireframeMaterial
+    wireframe.material = committedWireframeMaterial;
+    wireframe.material.needsUpdate = true;
+  });
+  translucentCubelets.clear();
+
+  // 2. Detect current covered holes
+  const coveredHoles = detectCoveredHoles();
+
+  // 3. Mark new cubelets above holes as translucent
+  const w = WELL_DIMS.width;
+  const h = WELL_DIMS.height;
+  const d = WELL_DIMS.depth;
+
+  coveredHoles.forEach((hole) => {
+    for (let yi = hole.y + 1; yi < h; yi++) {
+      const cubeletGroup = grid[hole.x][yi][hole.z];
+      if (cubeletGroup) {
+        const mesh = cubeletGroup.children[0]; // The actual cube mesh
+        const wireframe = cubeletGroup.children[1]; // The wireframe
+
+        // Store original color if not already stored
+        if (mesh.userData.originalColor === undefined) {
+          mesh.userData.originalColor = mesh.material.color.getHex();
+        }
+
+        // Apply translucent mesh material
+        const newMeshMaterial = translucentCommittedMaterial.clone();
+        newMeshMaterial.color.set(mesh.userData.originalColor);
+        mesh.material = newMeshMaterial;
+        mesh.material.needsUpdate = true;
+
+        // Apply translucent wireframe material
+        wireframe.material = translucentWireframeMaterial; // Use the new translucent wireframe material
+        wireframe.material.needsUpdate = true;
+
+        translucentCubelets.add(cubeletGroup);
+      }
+    }
+  });
+}
+
 function togglePause() {
   if (gameOver) return;
 
@@ -195,6 +313,37 @@ function togglePause() {
   isPaused = !isPaused;
   const pauseMenu = document.getElementById("pause-menu");
   pauseMenu.style.display = isPaused ? "block" : "none";
+}
+
+function createTriangleMesh(color) {
+  const geometry = new THREE.BufferGeometry();
+  // Vertices for a simple equilateral triangle in 2D (on XZ plane, assuming Y is up)
+  // You can adjust these to your preferred triangle shape
+  const vertices = new Float32Array([
+    0.5,
+    0,
+    -0.288, // Vertex 0 (right)
+    -0.5,
+    0,
+    -0.288, // Vertex 1 (left)
+    0.0,
+    0,
+    0.577, // Vertex 2 (top/front)
+  ]);
+  geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+  geometry.computeVertexNormals(); // Needed for proper lighting (if you add any to particles)
+
+  const material = new THREE.MeshBasicMaterial({
+    // Use MeshBasicMaterial as they are just decorative
+    color: color,
+    transparent: true,
+    opacity: 0.1, // Still faint
+    side: THREE.DoubleSide, // Important for seeing both sides of the plane
+  });
+
+  const triangle = new THREE.Mesh(geometry, material);
+  triangle.rotation.x = Math.PI / 2; // Orient flat triangle upwards (XZ plane)
+  return triangle;
 }
 
 function init() {
@@ -223,6 +372,8 @@ function init() {
   dirLight.castShadow = true;
   dirLight.shadow.bias = -0.001;
   scene.add(dirLight);
+
+  scene.add(staticMeshes, wallHighlights, collisionHighlights);
   grid = Array.from({ length: WELL_DIMS.width }, () =>
     Array.from({ length: WELL_DIMS.height }, () =>
       Array(WELL_DIMS.depth).fill(null),
@@ -414,7 +565,7 @@ function spawnPiece() {
   const spawnZ = spawnGridZ - (WELL_DIMS.depth / 2 - 0.5);
   activePiece.position.set(spawnX, WELL_DIMS.height - 3, spawnZ);
   scene.add(activePiece, ghostPiece);
-  if (checkCollision(activePiece)) {
+  if (checkCollision(activePiece).isColliding) {
     gameOver = true;
     document.getElementById("game-over").style.display = "block";
     scene.remove(activePiece, ghostPiece);
@@ -498,6 +649,9 @@ function lockPiece() {
   activePiece = ghostPiece = null;
   checkAndClearLayers();
   updateWallHighlights();
+
+  updateTranslucentCubelets();
+
   spawnPiece();
   isTouchingFloor = false;
   lockDelayTimer = 0;
@@ -565,6 +719,7 @@ function checkAndClearLayers() {
   if (layersCleared > 0) {
     score += 100 * layersCleared * layersCleared;
     document.getElementById("score").innerText = score;
+    updateTranslucentCubelets();
   }
 }
 
@@ -586,27 +741,232 @@ function updateGhostPiece() {
   if (!activePiece) return;
   ghostPiece.position.copy(activePiece.position);
   ghostPiece.quaternion.copy(activePiece.quaternion);
-  while (!checkCollision(ghostPiece)) ghostPiece.position.y--;
+  while (!checkCollision(ghostPiece).isColliding) ghostPiece.position.y--;
   ghostPiece.position.y++;
+}
+
+function flashWalls(walls, pieceBBoxMin, pieceBBoxMax) {
+  collisionHighlights.clear();
+  const w = WELL_DIMS.width,
+    h = WELL_DIMS.height,
+    d = WELL_DIMS.depth;
+  const hw = w / 2,
+    hd = d / 2;
+
+  const baseSolarizedColor =
+    SOLARIZED_COLORS_FOR_FLASH[
+      Math.floor(Math.random() * SOLARIZED_COLORS_FOR_FLASH.length)
+    ];
+  const flashColor = new THREE.Color(0x339999);
+  flashColor.multiplyScalar(0.5); // Still darken the base color
+  const darkerFlashColor = new THREE.Color(0x003333);
+  darkerFlashColor.multiplyScalar(0.99); // Still darken the base color
+
+  const flashSquareGeom = new THREE.PlaneGeometry(1, 1); // 1x1 square plane
+
+  // Helper to add a flash square to the scene
+  const addFlashSquare = (gridX, gridY, gridZ, distance, color) => {
+    let opacity;
+    if (distance === 0) {
+      opacity = 0.3; // Brighter for direct collision
+    } else if (distance === 1) {
+      opacity = 0.08; // Darker for one square away
+    } else {
+      return; // No flash for further distances
+    }
+
+    const material = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: opacity,
+      side: THREE.DoubleSide,
+    });
+
+    const flashPlane = new THREE.Mesh(flashSquareGeom, material);
+    // Position the flash plane at the center of the grid cell
+    const worldX = gridX - hw + 0.5;
+    const worldY = gridY - 0.5;
+    const worldZ = gridZ - hd + 0.5;
+
+    if (walls.includes("left") && gridX === 0) {
+      // Only flash on the leftmost face if it's the left wall
+      flashPlane.position.set(-hw - 0.05, worldY, worldZ);
+      flashPlane.rotation.y = Math.PI / 2;
+      collisionHighlights.add(flashPlane);
+    }
+    if (walls.includes("right") && gridX === WELL_DIMS.width - 1) {
+      // Only flash on the rightmost face
+      flashPlane.position.set(hw + 0.05, worldY, worldZ);
+      flashPlane.rotation.y = -Math.PI / 2;
+      collisionHighlights.add(flashPlane);
+    }
+    if (walls.includes("back") && gridZ === 0) {
+      // Only flash on the backmost face
+      flashPlane.position.set(worldX, worldY, -hd - 0.05);
+      collisionHighlights.add(flashPlane);
+    }
+    if (walls.includes("front") && gridZ === WELL_DIMS.depth - 1) {
+      // Only flash on the frontmost face
+      flashPlane.position.set(worldX, worldY, hd + 0.05);
+      flashPlane.rotation.y = Math.PI;
+      collisionHighlights.add(flashPlane);
+    }
+    if (walls.includes("floor") && gridY === 0) {
+      // Floor flash
+      const floorFlashPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        material,
+      );
+      floorFlashPlane.position.set(worldX, -0.55, worldZ);
+      floorFlashPlane.rotation.x = -Math.PI / 2;
+      collisionHighlights.add(floorFlashPlane);
+    }
+  };
+
+  // Iterate through the bounding box of the piece + 1 square buffer
+  // This allows us to check for pixels 1 unit away
+  const minX = Math.max(0, pieceBBoxMin.x - 1);
+  const maxX = Math.min(WELL_DIMS.width - 1, pieceBBoxMax.x + 1);
+  const minY = Math.max(0, pieceBBoxMin.y - 1);
+  const maxY = Math.min(WELL_DIMS.height - 1, pieceBBoxMax.y + 1);
+  const minZ = Math.max(0, pieceBBoxMin.z - 1);
+  const maxZ = Math.min(WELL_DIMS.depth - 1, pieceBBoxMax.z + 1);
+
+  for (let gy = minY; gy <= maxY; gy++) {
+    for (let gx = minX; gx <= maxX; gx++) {
+      for (let gz = minZ; gz <= maxZ; gz++) {
+        // Calculate Euclidean distance to the nearest cubelet of the piece
+        let minEuclideanDist = Infinity;
+        // Iterate through all cubelets in the piece's bounding box
+        for (let py = pieceBBoxMin.y; py <= pieceBBoxMax.y; py++) {
+          for (let px = pieceBBoxMin.x; px <= pieceBBoxMax.x; px++) {
+            for (let pz = pieceBBoxMin.z; pz <= pieceBBoxMax.z; pz++) {
+              // Calculate squared Euclidean distance (faster than sqrt)
+              const distSq =
+                (gx - px) * (gx - px) +
+                (gy - py) * (gy - py) +
+                (gz - pz) * (gz - pz);
+              minEuclideanDist = Math.min(minEuclideanDist, distSq);
+            }
+          }
+        }
+        const dist = Math.round(Math.sqrt(minEuclideanDist)); // Round to nearest integer for stepped effect
+
+        // Add flash square if distance is 0 or 1
+        if (dist <= 1) {
+          if (dist == 0) {
+            addFlashSquare(gx, gy, gz, dist, flashColor);
+            //TODO This is a hack because opacity does not affect these materials
+          } else if (dist == 1) {
+            addFlashSquare(gx, gy, gz, dist, darkerFlashColor);
+          }
+        }
+      }
+    }
+  }
+
+  collisionFlashTimer = COLLISION_FLASH_DURATION_MS;
 }
 
 function checkCollision(piece) {
   const tempVec = new THREE.Vector3();
+  let collidedWalls = [];
+  let isColliding = false;
+
+  let minY = Infinity; // Still useful for ghost piece, but not for flash now
+  let maxY = -Infinity; // Still useful for ghost piece, but not for flash now
+
+  // Store grid positions of piece cubes that are actually causing the collision with a wall
+  const collidingCubeGridPositions = [];
+
   for (const cube of piece.children) {
     cube.getWorldPosition(tempVec);
     const [gx, gy, gz] = worldToGrid(tempVec);
+
+    minY = Math.min(minY, gy); // Keep these for other uses like ghost piece
+    maxY = Math.max(maxY, gy); // Keep these for other uses like ghost piece
+
+    let cubeCollides = false;
+
+    // Check for boundary collisions
+    if (gy < 0) {
+      // Floor collision
+      cubeCollides = true;
+      if (!collidedWalls.includes("floor")) collidedWalls.push("floor");
+    }
+    if (gx < 0) {
+      // Left wall collision
+      cubeCollides = true;
+      if (!collidedWalls.includes("left")) collidedWalls.push("left");
+    }
+    if (gx >= WELL_DIMS.width) {
+      // Right wall collision
+      cubeCollides = true;
+      if (!collidedWalls.includes("right")) collidedWalls.push("right");
+    }
+    if (gz < 0) {
+      // Back wall collision
+      cubeCollides = true;
+      if (!collidedWalls.includes("back")) collidedWalls.push("back");
+    }
+    if (gz >= WELL_DIMS.depth) {
+      // Front wall collision
+      cubeCollides = true;
+      if (!collidedWalls.includes("front")) collidedWalls.push("front");
+    }
+    if (gy >= WELL_DIMS.height) {
+      // Ceiling collision (game over)
+      cubeCollides = true;
+    }
+
+    // Check for static block collisions (only if within bounds)
     if (
-      gy < 0 ||
-      gy >= WELL_DIMS.height ||
-      gx < 0 ||
-      gx >= WELL_DIMS.width ||
-      gz < 0 ||
-      gz >= WELL_DIMS.depth
-    )
-      return true;
-    if (grid[gx]?.[gy]?.[gz]) return true;
+      gy >= 0 &&
+      gy < WELL_DIMS.height &&
+      gx >= 0 &&
+      gx < WELL_DIMS.width &&
+      gz >= 0 &&
+      gz < WELL_DIMS.depth
+    ) {
+      if (grid[gx]?.[gy]?.[gz]) {
+        cubeCollides = true;
+      }
+    }
+
+    if (cubeCollides) {
+      isColliding = true; // Overall collision
+      // We only care about wall collisions here for the flash effect
+      // If the piece collides with a wall (and is about to be reverted),
+      // then we consider its cubes for the flash origin
+      // A simple way is to pass *all* cubes of the piece, and let flashWalls filter
+      // Or, determine if it's a *new* boundary collision that warrants a flash.
+      // For this simpler effect, let's just pass all piece cubes if a wall collision happens.
+      // If isColliding is true, all cubes are relevant for the flash
+      // This is actually simpler: just pass the piece's current position and dimensions.
+    }
   }
-  return false;
+  // For this effect, we don't need individual colliding cubes.
+  // The flash will happen on the walls themselves, localized by the piece's Y-range
+  // and using its extent for the "circle" center/radius.
+  // Let's revert to passing piece's Y-range and its world-position center.
+  // The previous implementation for flashWalls was better suited for "Euclidean circle" on walls
+  // if we want it pixelated, we make many small planes.
+
+  // Re-evaluating based on "darker one square away" and "not smooth"
+  // This implies we generate a grid of small flash planes at various distances.
+
+  // Let's calculate the bounding box of the piece in grid coordinates when it's colliding
+  const bboxMin = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const bboxMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+
+  piece.children.forEach((cube) => {
+    cube.getWorldPosition(tempVec);
+    const [gx, gy, gz] = worldToGrid(tempVec);
+    bboxMin.min(new THREE.Vector3(gx, gy, gz));
+    bboxMax.max(new THREE.Vector3(gx, gy, gz));
+  });
+
+  return { isColliding, walls: collidedWalls, bboxMin, bboxMax };
 }
 
 function animate(currentTime) {
@@ -625,6 +985,20 @@ function animate(currentTime) {
   TWEEN.update(currentTime);
   const delta = clock.getDelta();
 
+  if (collisionFlashTimer > 0) {
+    collisionFlashTimer -= delta * 1000; // Decrement by ms
+    const opacity = collisionFlashTimer / COLLISION_FLASH_DURATION_MS;
+    collisionHighlights.children.forEach((mesh) => {
+      if (mesh.material.transparent) {
+        mesh.material.opacity = opacity;
+        mesh.material.needsUpdate = true;
+      }
+    });
+    if (collisionFlashTimer <= 0) {
+      collisionHighlights.clear(); // Remove highlights when timer expires
+    }
+  }
+
   if (gameHasStarted && !gameOver && activePiece) {
     lastTick += delta;
     if (isTouchingFloor) lockDelayTimer += delta;
@@ -638,7 +1012,7 @@ function animate(currentTime) {
     } else if (lastTick > currentTickRate / 1000) {
       lastTick = 0;
       activePiece.position.y--;
-      if (checkCollision(activePiece)) {
+      if (checkCollision(activePiece).isColliding) {
         activePiece.position.y++;
         isTouchingFloor = true;
         if (lockDelayTimer === 0) lockDelayTimer = 0.001;
@@ -690,8 +1064,18 @@ function animate(currentTime) {
 function movePiece(x, y, z) {
   if (!activePiece || gameOver || isAnimating) return false;
   activePiece.position.add(new THREE.Vector3(x, y, z));
-  if (checkCollision(activePiece)) {
-    activePiece.position.sub(new THREE.Vector3(x, y, z));
+  const collisionResult = checkCollision(activePiece);
+  if (collisionResult.isColliding) {
+    activePiece.position.sub(new THREE.Vector3(x, y, z)); // Revert move
+    if (collisionResult.walls.length > 0) {
+      // If it was a wall collision
+      // Pass the bounding box from the collision check
+      flashWalls(
+        collisionResult.walls,
+        collisionResult.bboxMin,
+        collisionResult.bboxMax,
+      );
+    }
     return false;
   }
   if (isTouchingFloor) lockDelayTimer = 0;
@@ -699,14 +1083,17 @@ function movePiece(x, y, z) {
   return true;
 }
 
+// Modify rotatePiece to pass the piece's bounding box to flashWalls
 function rotatePiece(axis, angle) {
   if (!activePiece || gameOver || isAnimating) return false;
   const clone = activePiece.clone();
   clone.position.copy(activePiece.position);
   clone.rotateOnWorldAxis(axis, angle);
+
   let targetPosition = activePiece.position.clone();
   let isValidMove = false;
-  if (!checkCollision(clone)) {
+  let collisionResult = checkCollision(clone); // Check collision with rotated piece
+  if (!collisionResult.isColliding) {
     isValidMove = true;
   } else {
     const kicks = [
@@ -717,7 +1104,8 @@ function rotatePiece(axis, angle) {
     ];
     for (const kick of kicks) {
       clone.position.add(kick);
-      if (!checkCollision(clone)) {
+      collisionResult = checkCollision(clone); // Check after kick
+      if (!collisionResult.isColliding) {
         isValidMove = true;
         targetPosition.copy(clone.position);
         break;
@@ -746,8 +1134,17 @@ function rotatePiece(axis, angle) {
       })
       .start();
     return true;
+  } else {
+    if (collisionResult.walls.length > 0) {
+      // Pass the bounding box from the collision check (of the final attempted position)
+      flashWalls(
+        collisionResult.walls,
+        collisionResult.bboxMin,
+        collisionResult.bboxMax,
+      );
+    }
+    return false;
   }
-  return false;
 }
 
 function hardDrop() {
